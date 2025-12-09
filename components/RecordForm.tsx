@@ -9,7 +9,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import SharePointService from '../services/sharepointService';
+import SharePointService, { SessionTimeoutError } from '../services/sharepointService';
 
 interface RecordFormProps {
   sharePointService: SharePointService;
@@ -99,6 +99,10 @@ const RecordForm: React.FC<RecordFormProps> = ({
         },
       ]);
     } catch (error: any) {
+      // Handle session timeout - don't show alert as App.tsx will handle it
+      if (error instanceof SessionTimeoutError) {
+        return;
+      }
       Alert.alert('Error', error.message || 'Failed to insert record');
       console.error('Insert error:', error);
     } finally {

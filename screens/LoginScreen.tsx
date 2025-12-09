@@ -22,28 +22,30 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ sharePointService, onLoginSuc
   const [redirectUri, setRedirectUri] = useState<string>('');
 
   useEffect(() => {
-    // Generate redirect URI - in Expo Go it will use exp:// scheme, in custom builds it will use custom scheme
+    // Use a fixed custom scheme URI that doesn't depend on IP address
+    // Note: Custom schemes work in development/production builds, but Expo Go will fall back to exp://
     let uri = AuthSession.makeRedirectUri({
       scheme: 'employee-assets',
       path: 'auth',
     });
     
-    // If still using exp:// scheme (Expo Go), use the default without path to match Azure AD config
+    // Fallback: If still using exp:// scheme (Expo Go limitation), use localhost which is more stable
     if (uri.startsWith('exp://')) {
-      const defaultUri = AuthSession.makeRedirectUri();
-      // Remove any path that Expo adds (like /--/auth) but keep the base URI with IP and port
-      // Format should be: exp://IP:PORT/
-      // Parse: exp://192.168.9.142:8081/--/auth -> exp://192.168.9.142:8081/
-      if (defaultUri.includes('://')) {
-        const match = defaultUri.match(/^(exp:\/\/[^\/]+)/);
-        if (match) {
-          uri = match[1] + '/';
-        } else {
-          uri = defaultUri;
-        }
+      // Try to use localhost instead of IP for stability
+      const localhostUri = AuthSession.makeRedirectUri({
+        preferLocalhost: true,
+      });
+      if (localhostUri && localhostUri.includes('localhost')) {
+        uri = localhostUri.replace(/\/--\/.*$/, '/'); // Remove path, keep base URI
       } else {
-        uri = defaultUri;
+        // Last resort: use fixed custom scheme format
+        uri = 'employee-assets://auth';
       }
+    }
+    
+    // Ensure the redirect URI is in the correct format
+    if (!uri.includes('://')) {
+      uri = 'employee-assets://auth';
     }
     
     setRedirectUri(uri);
@@ -77,6 +79,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ sharePointService, onLoginSuc
               {redirectUri}
             </Text>
             <Text style={styles.redirectUriNote}>
+              ✅ This URI is fixed and will not change with your IP address{'\n'}
               ⚠️ Make sure this exact URI is added to Azure AD → Authentication → Redirect URIs
             </Text>
           </View>

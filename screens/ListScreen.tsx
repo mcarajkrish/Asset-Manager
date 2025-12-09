@@ -12,7 +12,7 @@ import {
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import SharePointService from '../services/sharepointService';
+import SharePointService, { SessionTimeoutError } from '../services/sharepointService';
 
 interface ListScreenProps {
   sharePointService: SharePointService;
@@ -55,17 +55,20 @@ const ListScreen: React.FC<ListScreenProps> = ({
         setRecords(employees);
       } else {
         const items = await sharePointService.getRecords(listName, employees);
-        // Debug: Log first record structure to understand field names
-        if (items.length > 0) {
-          console.log(`[${listName}] First record structure:`, JSON.stringify(items[0], null, 2));
-          console.log(`[${listName}] Available fields:`, Object.keys(items[0]));
-        }
         setRecords(items);
       }
     } catch (error: any) {
       const errorMessage = error.message || 'Failed to load records';
       setError(errorMessage);
       console.error('Error loading records:', error);
+      
+      // Handle session timeout - don't show alert as App.tsx will handle it
+      if (error instanceof SessionTimeoutError) {
+        // Session timeout is handled by App.tsx callback, just set error state
+        setError('Session expired. Please log in again.');
+        return;
+      }
+      
       Alert.alert('Error', errorMessage);
     } finally {
       setLoading(false);
@@ -104,6 +107,10 @@ const ListScreen: React.FC<ListScreenProps> = ({
               Alert.alert('Success', 'Record deleted successfully!');
               loadRecords();
             } catch (error: any) {
+              // Handle session timeout - don't show alert as App.tsx will handle it
+              if (error instanceof SessionTimeoutError) {
+                return;
+              }
               Alert.alert('Error', error.message || 'Failed to delete record');
             }
           },
@@ -275,23 +282,6 @@ const ListScreen: React.FC<ListScreenProps> = ({
   };
 
   const renderAccessCardRecord = (record: Record) => {
-    // Debug: Log all available fields for Access Cards
-    const recordIndex = records.indexOf(record);
-    if (recordIndex === 0) {
-      console.log('[Access Cards] Available fields:', Object.keys(record));
-      console.log('[Access Cards] Record sample:', JSON.stringify(record, null, 2));
-      // Log all non-empty field values
-      const nonEmptyFields = Object.entries(record)
-        .filter(([key, value]) => {
-          if (key === 'Id' || key.startsWith('_')) return false;
-          if (value === null || value === undefined || value === '') return false;
-          if (typeof value === 'object' && Object.keys(value).length === 0) return false;
-          return true;
-        })
-        .map(([key, value]) => `${key}: ${JSON.stringify(value)}`);
-      console.log('[Access Cards] Non-empty fields:', nonEmptyFields);
-    }
-    
     const accessCardNo = getFieldValue(record, ['AccessCardNo', 'AccessCardNumber', 'CardNumber', 'CardNo', 'field_1', 'field1', 'Title']);
     const cardStatus = getFieldValue(record, ['CardStatus', 'Status', 'field_2', 'field2']);
     
@@ -328,7 +318,7 @@ const ListScreen: React.FC<ListScreenProps> = ({
           <Text style={styles.accessCardValue}>{cardStatus}</Text>
         </View>
         <View style={styles.accessCardRow}>
-          <Text style={styles.accessCardLabel}>Employee:</Text>
+          <Text style={styles.accessCardLabel}>Assignee:</Text>
           <Text style={styles.accessCardValue}>{employee}</Text>
         </View>
         <View style={styles.accessCardRow}>
@@ -487,8 +477,7 @@ const ListScreen: React.FC<ListScreenProps> = ({
     // Debug: Log all available fields for Assets
     const recordIndex = records.indexOf(record);
     if (recordIndex === 0) {
-      console.log('[Assets] Available fields:', Object.keys(record));
-      console.log('[Assets] Record sample:', JSON.stringify(record, null, 2));
+
       // Log all non-empty field values
       const nonEmptyFields = Object.entries(record)
         .filter(([key, value]) => {
@@ -498,9 +487,11 @@ const ListScreen: React.FC<ListScreenProps> = ({
           return true;
         })
         .map(([key, value]) => `${key}: ${JSON.stringify(value)}`);
-      console.log('[Assets] Non-empty fields:', nonEmptyFields);
     }
     
+    console.log('[Assets] Available fields:', Object.keys(record));
+    console.log('[Assets] Available values:', Object.values(record));
+
     // Get Asset Id - try multiple field name variations
     const assetId = getFieldValue(record, [
       'AssetId', 
@@ -516,7 +507,8 @@ const ListScreen: React.FC<ListScreenProps> = ({
     ]);
     
     // Get Brand and Company separately - try more variations including encoded field names
-    const company = getFieldValue(record, ['Company', 'Company0', 'company', 'field_2', 'field2', 'Brand', 'brand']);
+    // Note: field_2 is the assignee field, not company, so exclude it from company lookup
+    const company = getFieldValue(record, ['Company', 'Company0', 'company', 'field2', 'Brand', 'brand']);
     const model = getFieldValue(record, ['Model', 'Model0', 'model', 'field_3', 'field3']);
     
     // Combine Brand + Company for Asset field
@@ -525,15 +517,16 @@ const ListScreen: React.FC<ListScreenProps> = ({
     // Get Serial Number - try field_4 and other variations
     const serialNumber = getFieldValue(record, ['field_4', 'field4', 'SerialNumber', 'Serial_Number', 'SerialNo', 'Serial_No', 'Serial Number']);
     
-    // For Assignee field, handle lookup fields (similar to Employee)
-    // The service should populate 'Assignee' field, so check that first
+    // For Assignee field, prioritize the resolved Assignee/AssigneeName fields set by resolveAssigneeNames
+    // Only use fallbacks if the service hasn't populated these fields
     let assignee = '-';
     
-    // First, check if Assignee field was populated by the service
-    if (record['Assignee'] && record['Assignee'] !== '-' && record['Assignee'] !== '[ID:') {
-      assignee = String(record['Assignee']);
+    // First, check if Assignee or AssigneeName fields were populated by the service (highest priority)
+    const resolvedAssignee = record['Assignee'] || record['AssigneeName'];
+    if (resolvedAssignee && resolvedAssignee !== '-' && !String(resolvedAssignee).startsWith('[ID:')) {
+      assignee = String(resolvedAssignee);
     } else {
-      // Try other field name variations
+      // If service didn't resolve it, try other field name variations
       assignee = getFieldValue(record, [
         'Assignee',
         'AssigneeName',
@@ -545,29 +538,65 @@ const ListScreen: React.FC<ListScreenProps> = ({
         'Assign',
       ]);
       
-      // If still not found, search for assignee-related fields
-      if (assignee === '-') {
-        const allKeys = Object.keys(record);
-        const assigneeFieldKeys = allKeys.filter(key => {
-          const keyLower = key.toLowerCase();
-          const isIdField = keyLower.endsWith('id') || keyLower.endsWith('lookupid');
-          return (keyLower.includes('assignee') || keyLower.includes('assigned') || keyLower.includes('assign')) && !isIdField;
-        });
+      // If still not found and we have field_2LookupId, try to resolve from cached employees
+      if (assignee === '-' && record['field_2LookupId'] && employees && employees.length > 0) {
+        const assigneeId = String(record['field_2LookupId']);
         
-        for (const field of assigneeFieldKeys) {
-          const value = record[field];
-          if (value !== null && value !== undefined && value !== '') {
-            // Handle object values (lookup fields)
-            if (typeof value === 'object' && !Array.isArray(value)) {
-              assignee = value.displayName || value.Title || value.title || value.name || String(value);
-            } else {
-              assignee = String(value);
-            }
-            if (assignee !== '-' && assignee !== 'null' && assignee !== 'undefined' && assignee.trim() !== '') {
-              break;
+        // Check if it's a GUID (Microsoft Graph user ID)
+        const isGuidFormat = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(assigneeId);
+        
+        let cachedEmployee: any = null;
+        
+        if (isGuidFormat) {
+          // Match by GUID (Graph user ID)
+          cachedEmployee = employees.find((emp: any) => {
+            const empId = String(emp.Id || '');
+            return empId.toLowerCase() === assigneeId.toLowerCase();
+          });
+        } else {
+          // Try integer matching (SharePoint list item ID)
+          const assigneeIdInt = parseInt(assigneeId, 10);
+          if (!isNaN(assigneeIdInt) && assigneeIdInt > 0) {
+            cachedEmployee = employees.find((emp: any) => {
+              const cachedId = typeof emp.Id === 'string' ? parseInt(emp.Id, 10) : emp.Id;
+              return cachedId === assigneeIdInt;
+            });
+            
+            // If not found by integer ID, try matching by EmpID field
+            if (!cachedEmployee) {
+              cachedEmployee = employees.find((emp: any) => {
+                const empId = String(emp.EmpID || emp.EmpId || '');
+                return empId === assigneeId || empId === String(assigneeIdInt);
+              });
             }
           }
         }
+        
+        if (cachedEmployee) {
+          assignee = cachedEmployee.Employee || 
+                    cachedEmployee.EmployeeName || 
+                    cachedEmployee.Title ||
+                    cachedEmployee.displayName ||
+                    '-';
+        }
+      }
+      
+      // Final fallback: check field_2 object only if we still haven't found anything
+      // This should rarely be needed if resolveAssigneeNames is working correctly
+      if (assignee === '-' && record['field_2'] && typeof record['field_2'] === 'object' && !Array.isArray(record['field_2'])) {
+        const field2Value = record['field_2'].displayName || 
+                           record['field_2'].Title || 
+                           record['field_2'].userPrincipalName ||
+                           record['field_2'].email ||
+                           record['field_2'].name;
+        if (field2Value && field2Value !== 'null' && field2Value !== 'undefined' && String(field2Value).trim() !== '') {
+          assignee = String(field2Value).trim();
+        }
+      }
+      
+      // Last resort: show the ID if we have field_2LookupId but couldn't resolve the name
+      if (assignee === '-' && record['field_2LookupId']) {
+        assignee = `[ID: ${record['field_2LookupId']}]`;
       }
     }
     

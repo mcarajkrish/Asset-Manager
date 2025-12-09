@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import SharePointService from '../services/sharepointService';
+import SharePointService, { SessionTimeoutError } from '../services/sharepointService';
 
 interface RecordViewProps {
   sharePointService: SharePointService;
@@ -98,6 +98,10 @@ const RecordView: React.FC<RecordViewProps> = ({
         onRecordUpdated();
       }
     } catch (error: any) {
+      // Handle session timeout - don't show alert as App.tsx will handle it
+      if (error instanceof SessionTimeoutError) {
+        return;
+      }
       Alert.alert('Error', error.message || 'Failed to update record');
       console.error('Update error:', error);
     } finally {
@@ -132,6 +136,10 @@ const RecordView: React.FC<RecordViewProps> = ({
                 onRecordDeleted();
               }
             } catch (error: any) {
+              // Handle session timeout - don't show alert as App.tsx will handle it
+              if (error instanceof SessionTimeoutError) {
+                return;
+              }
               Alert.alert('Error', error.message || 'Failed to delete record');
               console.error('Delete error:', error);
             } finally {

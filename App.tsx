@@ -4,7 +4,7 @@ import { Alert } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import SharePointService from './services/sharepointService';
+import SharePointService, { SessionTimeoutError } from './services/sharepointService';
 import LoginScreen from './screens/LoginScreen';
 import HomeScreen from './screens/HomeScreen';
 import ListScreen from './screens/ListScreen';
@@ -38,12 +38,22 @@ export default function App() {
   const [employees, setEmployees] = useState<any[]>([]);
 
   useEffect(() => {
+    // Set up session timeout handler
+    sharePointService.setOnSessionTimeout(() => {
+      handleSessionTimeout();
+    });
+
     // Check if already authenticated
     const token = sharePointService.getAccessToken();
     if (token) {
       setIsAuthenticated(true);
       loadUserInfo();
     }
+
+    // Cleanup on unmount
+    return () => {
+      sharePointService.clearOnSessionTimeout();
+    };
   }, []);
 
   const loadUserInfo = async () => {
@@ -64,6 +74,22 @@ export default function App() {
     await loadUserInfo();
   };
 
+  const handleSessionTimeout = () => {
+    // Clear authentication state
+    sharePointService.setAccessToken('');
+    setIsAuthenticated(false);
+    setCurrentUser(null);
+    setIsAdmin(false);
+    setEmployees([]);
+    
+    // Show alert to user
+    Alert.alert(
+      'Session Expired',
+      'Your session has expired. Please log in again.',
+      [{ text: 'OK' }]
+    );
+  };
+
   const handleLogout = () => {
     Alert.alert(
       'Logout',
@@ -78,6 +104,7 @@ export default function App() {
             setIsAuthenticated(false);
             setCurrentUser(null);
             setIsAdmin(false);
+            setEmployees([]);
           },
         },
       ]

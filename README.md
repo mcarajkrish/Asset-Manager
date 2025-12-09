@@ -141,35 +141,67 @@ You should now see:
 
 ## Configure Redirect URI
 
-### Step 1: Find Your App's Redirect URI
+### Permanent Solution (Recommended)
 
-1. Open your app in the iOS Simulator
-2. Look at the connection screen
-3. You'll see a section showing **"Redirect URI:"**
-4. It will show something like:
-   - `exp://localhost:8081` (iOS Simulator)
-   - `exp://192.168.x.x:8081` (if using network IP)
+The app is configured to use a **fixed custom scheme** that doesn't change with your IP address:
 
-**Copy this exact URI!**
+**Fixed Redirect URI: `employee-assets://auth`**
 
-### Step 2: Add to Azure AD
+This URI will work consistently and never change, regardless of your network or IP address.
+
+#### Step 1: Add Fixed URI to Azure AD
 
 1. In Azure Portal, go to your app registration → **Authentication**
 2. Under **Platform configurations**, click **+ Add a platform**
 3. Select **"Mobile and desktop applications"**
 4. Click **Configure**
-5. In the **Redirect URIs** field, paste the exact URI from your app
+5. In the **Redirect URIs** field, add: `employee-assets://auth`
 6. Under **"Implicit grant and hybrid flows"**, check:
    - ✅ **Access tokens** (ID tokens)
    - ✅ **ID tokens**
 7. Click **Save**
 
+#### Step 2: Build Development Build (Required for Custom Scheme)
+
+**Note**: Custom URL schemes like `employee-assets://auth` work in development builds and production builds, but **not in Expo Go**.
+
+To use the permanent fixed URI, create a development build:
+
+```bash
+# For iOS
+npx expo run:ios
+
+# For Android
+npx expo run:android
+```
+
+This will create a development build that supports the custom scheme.
+
+### Temporary Solution (Expo Go Only)
+
+If you're using **Expo Go** (not a development build), the app will fall back to an IP-based URI that changes with your network:
+
+1. Open your app in Expo Go
+2. Look at the connection screen for the **"Redirect URI:"**
+3. It will show something like:
+   - `exp://localhost:8081` (iOS Simulator - more stable)
+   - `exp://192.168.x.x:8081` (physical device - changes with IP)
+
+**To minimize changes**, use `exp://localhost:8081` when testing in the iOS Simulator, as it's more stable than IP addresses.
+
+#### Add Multiple URIs to Azure AD
+
+You can add multiple redirect URIs to Azure AD:
+- `employee-assets://auth` (permanent, works with development/production builds)
+- `exp://localhost:8081` (for Expo Go in simulator)
+- `exp://192.168.x.x:8081` (for Expo Go on physical device - may need to update when IP changes)
+
 ### Important Notes
 
-- The redirect URI must match **exactly** (protocol, host, port)
-- You can add multiple URIs if needed
-- Common URIs: `exp://localhost:8081` or `exp://192.168.x.x:8081`
-- The redirect URI may change if your network IP changes
+- **For permanent fix**: Use `employee-assets://auth` with a development build
+- **For Expo Go**: The URI may change when your IP changes (add multiple URIs or use localhost)
+- The redirect URI must match **exactly** (protocol, host, port, path)
+- You can add multiple URIs in Azure AD if needed
 
 ---
 

@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import SharePointService from '../services/sharepointService';
+import SharePointService, { SessionTimeoutError } from '../services/sharepointService';
 
 interface HomeScreenProps {
   sharePointService: SharePointService;
@@ -63,6 +63,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
 
       setEmployees(employeesList);
     } catch (error: any) {
+      // Handle session timeout - don't show alert as App.tsx will handle it
+      if (error instanceof SessionTimeoutError) {
+        return;
+      }
       console.error('Error fetching employees:', error);
     } finally {
       setLoadingEmployees(false);
