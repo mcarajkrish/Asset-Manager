@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
@@ -44,6 +44,7 @@ const ListScreen: React.FC<ListScreenProps> = ({
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
   const loadRecords = async () => {
     try {
@@ -80,6 +81,11 @@ const ListScreen: React.FC<ListScreenProps> = ({
       setRefreshing(false);
     }
   };
+
+  // Reset category when list name changes
+  useEffect(() => {
+    setSelectedCategory('All');
+  }, [listName]);
 
   // Load records when screen comes into focus (e.g., when returning from detail screen)
   useFocusEffect(
@@ -157,8 +163,64 @@ const ListScreen: React.FC<ListScreenProps> = ({
     return false;
   };
 
-  // Filter records based on search query
-  const filteredRecords = records.filter(record => matchesSearch(record, searchQuery));
+  // Format category name for display
+  const formatCategoryName = (category: string): string => {
+    if (category === 'All') return 'All';
+    
+    // Convert to title case and handle common cases
+    const formatted = category
+      .toLowerCase()
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+    
+    // Handle pluralization for common categories
+    const pluralMap: { [key: string]: string } = {
+      'Laptop': 'Laptops',
+      'Mobile': 'Mobiles',
+      'Monitor': 'Monitors',
+      'Watch': 'Watches',
+      'Tv': 'TVs',
+      'Tablet': 'Tablets',
+      'Chest Strap': 'Chest Straps',
+      'Band': 'Bands',
+      'Fitness Equipment': 'Fitness Equipment',
+    };
+    
+    return pluralMap[formatted] || formatted;
+  };
+
+  // Calculate category counts for Assets list
+  const categoryCounts = React.useMemo(() => {
+    if (listName !== 'Assets') return {};
+    
+    const counts: { [key: string]: number } = { 'All': records.length };
+    
+    records.forEach((record) => {
+      const category = record['field_0'] || record['Device Type'] || 'Other';
+      const categoryKey = String(category).trim();
+      if (categoryKey) {
+        counts[categoryKey] = (counts[categoryKey] || 0) + 1;
+      }
+    });
+    
+    return counts;
+  }, [records, listName]);
+
+  // Filter records based on search query and category
+  const filteredRecords = React.useMemo(() => {
+    let filtered = records.filter(record => matchesSearch(record, searchQuery));
+    
+    // Apply category filter for Assets
+    if (listName === 'Assets' && selectedCategory !== 'All') {
+      filtered = filtered.filter(record => {
+        const category = record['field_0'] || record['Device Type'] || '';
+        return String(category).trim() === selectedCategory;
+      });
+    }
+    
+    return filtered;
+  }, [records, searchQuery, selectedCategory, listName]);
 
   const getFieldValue = (record: Record, fieldNames: string[]): string => {
     // First, try exact field names (case-insensitive)
@@ -312,7 +374,7 @@ const ListScreen: React.FC<ListScreenProps> = ({
   };
 
   const renderAccessCardRecord = (record: Record) => {
-    console.log('record', record);
+
     return (
       <View style={styles.accessCardContent}>
         <View style={styles.accessCardRow}>
@@ -352,6 +414,7 @@ const ListScreen: React.FC<ListScreenProps> = ({
   };
 
   const renderAssetRecord = (record: Record) => {
+
     return (
       <View style={styles.accessCardContent}>
         <View style={styles.accessCardRow}>
@@ -408,11 +471,49 @@ const ListScreen: React.FC<ListScreenProps> = ({
         </View>
       )}
 
+      {/* Category Chips - Only for Assets */}
+      {!loading && listName === 'Assets' && records.length > 0 && (
+        <View style={styles.categoryContainer}>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryChipsContainer}
+          >
+            {Object.entries(categoryCounts)
+              .sort(([a], [b]) => {
+                // Sort "All" first, then alphabetically
+                if (a === 'All') return -1;
+                if (b === 'All') return 1;
+                return a.localeCompare(b);
+              })
+              .map(([category, count]) => (
+                <TouchableOpacity
+                  key={category}
+                  style={[
+                    styles.categoryChip,
+                    selectedCategory === category && styles.categoryChipSelected
+                  ]}
+                  onPress={() => setSelectedCategory(category)}
+                >
+                  <Text
+                    style={[
+                      styles.categoryChipText,
+                      selectedCategory === category && styles.categoryChipTextSelected
+                    ]}
+                  >
+                    {formatCategoryName(category)} ({count})
+                  </Text>
+                </TouchableOpacity>
+              ))}
+          </ScrollView>
+        </View>
+      )}
+
       {/* Count */}
       {!loading && (
         <View style={styles.countContainer}>
           <Text style={styles.countText}>
-            {searchQuery.trim() 
+            {searchQuery.trim() || (listName === 'Assets' && selectedCategory !== 'All')
               ? `${filteredRecords.length} of ${records.length} record(s)`
               : `${records.length} record(s)`
             }
@@ -437,14 +538,17 @@ const ListScreen: React.FC<ListScreenProps> = ({
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>No records found</Text>
           <Text style={styles.emptySubtext}>
-            Pull down to refresh or go back to create a new record
+            Pull down to refresh
           </Text>
         </View>
-      ) : filteredRecords.length === 0 && searchQuery.trim() ? (
+      ) : filteredRecords.length === 0 && (searchQuery.trim() || (listName === 'Assets' && selectedCategory !== 'All')) ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No records match your search</Text>
+          <Text style={styles.emptyText}>No records found</Text>
           <Text style={styles.emptySubtext}>
-            Try a different search term or clear the search
+            {searchQuery.trim() 
+              ? 'Try a different search term or clear the search'
+              : 'Try selecting a different category or clear the filter'
+            }
           </Text>
         </View>
       ) : (
@@ -547,6 +651,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
     fontWeight: 'bold',
+  },
+  categoryContainer: {
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+    paddingVertical: 12,
+  },
+  categoryChipsContainer: {
+    paddingHorizontal: 15,
+    gap: 8,
+  },
+  categoryChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    marginRight: 8,
+  },
+  categoryChipSelected: {
+    backgroundColor: '#0078d4',
+    borderColor: '#0078d4',
+  },
+  categoryChipText: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '500',
+  },
+  categoryChipTextSelected: {
+    color: '#fff',
+    fontWeight: '600',
   },
   countContainer: {
     padding: 15,
