@@ -50,6 +50,11 @@ const ListScreen: React.FC<ListScreenProps> = ({
       setLoading(true);
       setError(null);
       
+      // For Assets list, refresh employees cache first to ensure correct assignee resolution
+      if (listName === 'Assets' && onRefreshEmployees) {
+        await onRefreshEmployees();
+      }
+      
       // For Employees list, use cached employees from organization instead of fetching from SharePoint
       if (listName === 'Employees' && employees && employees.length > 0) {
         setRecords(employees);
@@ -85,8 +90,8 @@ const ListScreen: React.FC<ListScreenProps> = ({
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    // If this is Employees list and we have refresh callback, refresh employees cache first
-    if (listName === 'Employees' && onRefreshEmployees) {
+    // Refresh employees cache first for Employees list or Assets list (to ensure correct assignee resolution)
+    if (onRefreshEmployees && (listName === 'Employees' || listName === 'Assets')) {
       await onRefreshEmployees();
     }
     loadRecords();
@@ -117,29 +122,6 @@ const ListScreen: React.FC<ListScreenProps> = ({
         },
       ]
     );
-  };
-
-  const getDisplayValue = (record: Record): string => {
-    if (record.Title) return record.Title;
-    
-    const displayFields = ['Name', 'AssetName', 'EmployeeName', 'CardNumber', 'AccessCardNumber'];
-    for (const field of displayFields) {
-      if (record[field]) {
-        return String(record[field]);
-      }
-    }
-    
-    const keys = Object.keys(record).filter(
-      (key) => key !== 'Id' && key !== '__metadata' && !key.startsWith('_')
-    );
-    if (keys.length > 0) {
-      const firstValue = record[keys[0]];
-      if (firstValue !== null && firstValue !== undefined) {
-        return String(firstValue);
-      }
-    }
-    
-    return `Record #${record.Id}`;
   };
 
   // Search function to check if record matches search query
@@ -281,12 +263,57 @@ const ListScreen: React.FC<ListScreenProps> = ({
     return '-';
   };
 
+  // Sort records based on list type
+  const sortedRecords = React.useMemo(() => {
+    if (listName === 'Assets') {
+      return [...filteredRecords].sort((a, b) => {
+        const assetIdA = getFieldValue(a, ['AssetID']);
+        const assetIdB = getFieldValue(b, ['AssetID']);
+        // Try numeric comparison first, then string comparison
+        const numA = parseInt(assetIdA, 10);
+        const numB = parseInt(assetIdB, 10);
+        if (!isNaN(numA) && !isNaN(numB)) {
+          return numA - numB;
+        }
+        return assetIdA.localeCompare(assetIdB, undefined, { numeric: true, sensitivity: 'base' });
+      });
+    } else if (listName === 'Access Cards') {
+      return [...filteredRecords].sort((a, b) => {
+        const cardNoA = getFieldValue(a, ['AccessCardNo']);
+        const cardNoB = getFieldValue(b, ['AccessCardNo']);
+        // Try numeric comparison first, then string comparison
+        const numA = parseInt(cardNoA, 10);
+        const numB = parseInt(cardNoB, 10);
+        if (!isNaN(numA) && !isNaN(numB)) {
+          return numA - numB;
+        }
+        return cardNoA.localeCompare(cardNoB, undefined, { numeric: true, sensitivity: 'base' });
+      });
+    }
+    return filteredRecords;
+  }, [filteredRecords, listName]);
+
+  const getCardStatus = (record: Record): string => {
+    return getFieldValue(record, ['CardStatus']).toLowerCase();
+  };
+
+  const getDeviceStatus = (record: Record): string => {
+    return getFieldValue(record, ['DeviceStatus']).toLowerCase();
+  };
+
+  const getCardBackgroundColor = (status: string): string => {
+    const normalizedStatus = status.toLowerCase().trim();
+    if (normalizedStatus === 'available') {
+      return '#e8f5e9'; // Light green
+    } else if (normalizedStatus === 'assigned') {
+      return '#e3f2fd'; // Light blue
+    }
+    return '#fff'; // Default white
+  };
+
   const renderAccessCardRecord = (record: Record) => {
-    const accessCardNo = getFieldValue(record, ['AccessCardNo', 'AccessCardNumber', 'CardNumber', 'CardNo', 'field_1', 'field1', 'Title']);
-    const cardStatus = getFieldValue(record, ['CardStatus', 'Status', 'field_2', 'field2']);
+    const accessCardNo = getFieldValue(record, ['AccessCardNo']);
     
-    // For Employee field, explicitly exclude ID fields and look for display values
-    // First, find all non-ID employee fields
     const allKeys = Object.keys(record);
     const employeeFieldKeys = allKeys.filter(key => {
       const keyLower = key.toLowerCase();
@@ -294,6 +321,7 @@ const ListScreen: React.FC<ListScreenProps> = ({
       return (keyLower.includes('employee') || keyLower.includes('emp')) && !isIdField;
     });
     
+    console.log('employeeFieldKeys', record);
     // Try multiple variations of Employee field names (excluding ID fields)
     const employee = getFieldValue(record, [
       'Employee', 
@@ -305,17 +333,13 @@ const ListScreen: React.FC<ListScreenProps> = ({
       ...employeeFieldKeys
     ]);
     
-    const empId = getFieldValue(record, ['EmpId', 'EmployeeId', 'EmpID', 'EmployeeID', 'EmployeeLookupId']);
+    const empId = getFieldValue(record, ['EmpId']);
 
     return (
       <View style={styles.accessCardContent}>
         <View style={styles.accessCardRow}>
           <Text style={styles.accessCardLabel}>Access Card No:</Text>
           <Text style={styles.accessCardValue}>{accessCardNo}</Text>
-        </View>
-        <View style={styles.accessCardRow}>
-          <Text style={styles.accessCardLabel}>Card Status:</Text>
-          <Text style={styles.accessCardValue}>{cardStatus}</Text>
         </View>
         <View style={styles.accessCardRow}>
           <Text style={styles.accessCardLabel}>Assignee:</Text>
@@ -332,14 +356,7 @@ const ListScreen: React.FC<ListScreenProps> = ({
   const renderEmployeeRecord = (record: Record) => {
     // Get Emp ID - try multiple field name variations
     const empId = getFieldValue(record, [
-      'EmpID',
-      'EmpId', 
-      'EmpID0',
-      'EmployeeID',
-      'EmployeeId',
-      'EmployeeID0',
-      'ID',
-      'Id'
+      'EmpID'
     ]);
     
     // Get Emp Name - try multiple field name variations and search more thoroughly
@@ -477,8 +494,6 @@ const ListScreen: React.FC<ListScreenProps> = ({
     // Debug: Log all available fields for Assets
     const recordIndex = records.indexOf(record);
     if (recordIndex === 0) {
-
-      // Log all non-empty field values
       const nonEmptyFields = Object.entries(record)
         .filter(([key, value]) => {
           if (key === 'Id' || key.startsWith('_')) return false;
@@ -489,43 +504,41 @@ const ListScreen: React.FC<ListScreenProps> = ({
         .map(([key, value]) => `${key}: ${JSON.stringify(value)}`);
     }
     
-    console.log('[Assets] Available fields:', Object.keys(record));
-    console.log('[Assets] Available values:', Object.values(record));
-
     // Get Asset Id - try multiple field name variations
-    const assetId = getFieldValue(record, [
-      'AssetId', 
-      'AssetID', 
-      'Asset_Id', 
-      'Asset Id',
-      'AssetID0',
-      'field_1',
-      'field1',
-      'ID',
-      'Id',
-      'Title'
-    ]);
+    const assetId = getFieldValue(record, ['AssetID']);
     
     // Get Brand and Company separately - try more variations including encoded field names
     // Note: field_2 is the assignee field, not company, so exclude it from company lookup
-    const company = getFieldValue(record, ['Company', 'Company0', 'company', 'field2', 'Brand', 'brand']);
-    const model = getFieldValue(record, ['Model', 'Model0', 'model', 'field_3', 'field3']);
+    const company = getFieldValue(record, ['Company']);
+    const model = getFieldValue(record, ['Model']);
     
     // Combine Brand + Company for Asset field
     const asset = [company, model].filter(Boolean).join(' ').trim() || '-';
     
     // Get Serial Number - try field_4 and other variations
-    const serialNumber = getFieldValue(record, ['field_4', 'field4', 'SerialNumber', 'Serial_Number', 'SerialNo', 'Serial_No', 'Serial Number']);
+    const serialNumber = getFieldValue(record, ['Serial Number']);
     
-    // For Assignee field, prioritize the resolved Assignee/AssigneeName fields set by resolveAssigneeNames
-    // Only use fallbacks if the service hasn't populated these fields
+    // For Assignee field, check if Assignee/AssigneeName fields are available
+    // Otherwise use fallbacks
     let assignee = '-';
     
     // First, check if Assignee or AssigneeName fields were populated by the service (highest priority)
     const resolvedAssignee = record['Assignee'] || record['AssigneeName'];
-    if (resolvedAssignee && resolvedAssignee !== '-' && !String(resolvedAssignee).startsWith('[ID:')) {
-      assignee = String(resolvedAssignee);
-    } else {
+    if (resolvedAssignee && resolvedAssignee !== '-') {
+      // Handle expanded lookup object
+      if (typeof resolvedAssignee === 'object' && !Array.isArray(resolvedAssignee)) {
+        assignee = resolvedAssignee.displayName || 
+                   resolvedAssignee.Title || 
+                   resolvedAssignee.userPrincipalName ||
+                   resolvedAssignee.email ||
+                   resolvedAssignee.name ||
+                   '-';
+      } else if (!String(resolvedAssignee).startsWith('[ID:')) {
+        assignee = String(resolvedAssignee);
+      }
+    }
+    
+    if (assignee === '-') {
       // If service didn't resolve it, try other field name variations
       assignee = getFieldValue(record, [
         'Assignee',
@@ -582,7 +595,6 @@ const ListScreen: React.FC<ListScreenProps> = ({
       }
       
       // Final fallback: check field_2 object only if we still haven't found anything
-      // This should rarely be needed if resolveAssigneeNames is working correctly
       if (assignee === '-' && record['field_2'] && typeof record['field_2'] === 'object' && !Array.isArray(record['field_2'])) {
         const field2Value = record['field_2'].displayName || 
                            record['field_2'].Title || 
@@ -708,39 +720,32 @@ const ListScreen: React.FC<ListScreenProps> = ({
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
           }
         >
-          {filteredRecords.map((record) => (
-            <TouchableOpacity
-              key={String(record.Id)}
-              style={styles.recordCard}
-              onPress={() => onRecordPress(record)}
-            >
-              <View style={styles.recordContent}>
-                {listName === 'Access Cards' ? (
-                  renderAccessCardRecord(record)
-                ) : listName === 'Assets' ? (
-                  renderAssetRecord(record)
-                ) : listName === 'Employees' ? (
-                  renderEmployeeRecord(record)
-                ) : (
-                  <>
-                    <Text style={styles.recordTitle}>{getDisplayValue(record)}</Text>
-                    <Text style={styles.recordId}>ID: {record.Id}</Text>
-                  </>
-                )}
-              </View>
-              {/* {listName !== 'Employees' && (
-                <TouchableOpacity
-                  style={styles.deleteButton}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    handleDelete(record.Id);
-                  }}
-                >
-                  <Text style={styles.deleteButtonText}>🗑️</Text>
-                </TouchableOpacity>
-              )} */}
-            </TouchableOpacity>
-          ))}
+          {sortedRecords.map((record) => {
+            let cardBackgroundColor = '#fff';
+            if (listName === 'Access Cards') {
+              cardBackgroundColor = getCardBackgroundColor(getCardStatus(record));
+            } else if (listName === 'Assets') {
+              cardBackgroundColor = getCardBackgroundColor(getDeviceStatus(record));
+            }
+            
+            return (
+              <TouchableOpacity
+                key={String(record.Id)}
+                style={[styles.recordCard, { backgroundColor: cardBackgroundColor }]}
+                onPress={() => onRecordPress(record)}
+              >
+                <View style={styles.recordContent}>
+                  {listName === 'Access Cards' ? (
+                    renderAccessCardRecord(record)
+                  ) : listName === 'Assets' ? (
+                    renderAssetRecord(record)
+                  ) : listName === 'Employees' ? (
+                    renderEmployeeRecord(record)
+                  ) : null}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       )}
     </SafeAreaView>

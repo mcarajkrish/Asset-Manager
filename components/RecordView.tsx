@@ -255,26 +255,6 @@ const RecordView: React.FC<RecordViewProps> = ({
           )}
         </View>
       </ScrollView>
-
-      {/* {!isEditing && !isOrganizationUser && (
-        <View style={styles.footer}>
-          <TouchableOpacity
-            style={styles.editButton}
-            onPress={() => setIsEditing(true)}
-          >
-            <Text style={styles.editButtonText}>✏️ Edit Record</Text>
-          </TouchableOpacity>
-        </View>
-      )} */}
-      {isOrganizationUser && (
-        <View style={styles.footer}>
-          <View style={styles.infoBox}>
-            <Text style={styles.infoText}>
-              ℹ️ This is an organization user. User information is managed in Azure AD and cannot be edited here.
-            </Text>
-          </View>
-        </View>
-      )}
     </SafeAreaView>
   );
 };

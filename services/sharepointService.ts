@@ -350,13 +350,15 @@ class SharePointService {
 
   /**
    * Get field definitions for a list and create mapping from internal names to display names
+   * Also returns lookup field names for expansion
    */
-  private async getFieldMapping(listName: string): Promise<Map<string, string>> {
-    // Check cache first
-    if (this.fieldMappingCache.has(listName)) {
-      return this.fieldMappingCache.get(listName)!;
-    }
-
+  private async getFieldMapping(listName: string): Promise<{
+    mapping: Map<string, string>;
+    lookupFields: string[];
+  }> {
+    // Check cache first - we'll need to update cache structure
+    const cacheKey = `${listName}_fieldInfo`;
+    
     try {
       const listId = await this.getListId(listName);
       const siteId = await this.getSiteId();
@@ -368,6 +370,7 @@ class SharePointService {
       
       const columns = columnsResponse.value || [];
       const mapping = new Map<string, string>();
+      const lookupFields: string[] = [];
       
       // Create mapping: internal name -> display name
       columns.forEach((column: any) => {
@@ -381,54 +384,81 @@ class SharePointService {
             const baseName = internalName.replace('LookupId', '');
             mapping.set(baseName, displayName);
           }
+          
+          // Identify lookup fields (Person or Lookup column types)
+          // Check various ways the column type might be indicated
+          const columnType = column.text?.type || column.type || column.columnType || '';
+          const isPersonField = columnType === 'person' || 
+                               columnType === 'user' ||
+                               column.person ||
+                               column.user ||
+                               (column.text && column.text.type === 'person');
+          const isLookupField = columnType === 'lookup' || 
+                               column.lookup ||
+                               (column.text && column.text.type === 'lookup');
+          
+          // If it ends with LookupId, it's definitely a lookup field
+          const hasLookupIdSuffix = internalName.endsWith('LookupId');
+          
+          if (isPersonField || isLookupField || hasLookupIdSuffix) {
+            // Get the base field name (without LookupId suffix)
+            const baseFieldName = internalName.replace('LookupId', '');
+            if (baseFieldName && !lookupFields.includes(baseFieldName)) {
+              lookupFields.push(baseFieldName);
+            }
+          }
         }
       });
       
-      // Cache the mapping
+      // Cache the mapping (store both mapping and lookupFields)
       this.fieldMappingCache.set(listName, mapping);
       
-      return mapping;
+      return { mapping, lookupFields };
     } catch (error: any) {
       // Return empty map if fetch fails
       const emptyMap = new Map<string, string>();
       this.fieldMappingCache.set(listName, emptyMap);
-      return emptyMap;
+      return { mapping: emptyMap, lookupFields: [] };
     }
   }
 
   /**
-   * Normalize field names in a record: convert internal names to display names
-   * Preserves both internal and display names for compatibility
+   * Normalize field names in a record: remove duplicates when both internal and display names exist
+   * Only uses keys from SharePoint response, doesn't create new keys
    */
   private normalizeFieldNames(record: any, fieldMapping: Map<string, string>): any {
     const normalized: any = { ...record }; // Start with all original fields
     
-    // Process all fields and add display name mappings
+    // Track which display names to remove (when internal name exists with same value)
+    const displayNamesToRemove = new Set<string>();
+    
+    // Process all fields - only remove duplicates, don't create new keys
     Object.keys(record).forEach((key) => {
-      // Check if this is an internal field name that should be mapped
+      // Check if this is an internal field name that has a display name mapping
       const displayName = fieldMapping.get(key);
       
       if (displayName && displayName !== key) {
-        // Add display name version while keeping original
-        normalized[displayName] = record[key];
+        const value = record[key];
+        const displayValue = record[displayName];
         
-        // Handle LookupId fields: create display name version
-        if (key.includes('LookupId')) {
-          const baseKey = key.replace('LookupId', '');
-          const baseDisplayName = fieldMapping.get(baseKey) || baseKey;
-          const displayLookupId = `${baseDisplayName}LookupId`;
-          if (displayLookupId !== key) {
-            normalized[displayLookupId] = record[key];
+        // If display name already exists in original record with same value, mark it for removal
+        // (prefer internal name since code uses internal names)
+        if (displayValue !== undefined) {
+          // Compare values (handle objects, arrays, primitives)
+          const valuesMatch = JSON.stringify(displayValue) === JSON.stringify(value);
+          if (valuesMatch) {
+            // Both exist with same value, remove display name to avoid duplicate (keep internal name)
+            displayNamesToRemove.add(displayName);
           }
+          // If display name exists but values differ, keep both (don't overwrite)
         }
-        
-        // Handle base lookup fields (without LookupId suffix)
-        // e.g., field_2 -> Assignee
-        if (!key.includes('LookupId') && record[key] && typeof record[key] === 'object') {
-          // This might be an expanded lookup field
-          normalized[displayName] = record[key];
-        }
+        // If display name doesn't exist, don't create it - only use what SharePoint returns
       }
+    });
+    
+    // Remove duplicate display names when internal name exists with same value
+    displayNamesToRemove.forEach((displayName) => {
+      delete normalized[displayName];
     });
     
     return normalized;
@@ -488,6 +518,138 @@ class SharePointService {
     }
     
     return null;
+  }
+
+  /**
+   * Expand lookup fields by fetching full details for fields that only have LookupId
+   */
+  private async expandLookupFields(
+    records: any[],
+    listName: string,
+    siteId: string,
+    listId: string,
+    lookupFields: string[],
+    cachedEmployees?: any[]
+  ): Promise<void> {
+    // For each lookup field, check if we need to expand it
+    for (const lookupField of lookupFields) {
+      const lookupIdField = `${lookupField}LookupId`;
+      
+      // Collect unique lookup IDs that need expansion
+      const lookupIdsToExpand = new Set<string | number>();
+      const recordsNeedingExpansion: any[] = [];
+      
+      records.forEach((record) => {
+        const lookupId = record[lookupIdField];
+        const lookupValue = record[lookupField];
+        
+        // If we have LookupId but not an expanded object, we need to fetch it
+        if (lookupId != null && lookupId !== '' && 
+            (lookupValue == null || typeof lookupValue !== 'object' || Object.keys(lookupValue).length === 0)) {
+          lookupIdsToExpand.add(lookupId);
+          recordsNeedingExpansion.push(record);
+        }
+      });
+      
+      if (lookupIdsToExpand.size === 0) continue;
+      
+      // Determine if this is a Person field or a Lookup field
+      // For Person fields, we'll try to fetch from Microsoft Graph users
+      // For Lookup fields, we need to determine the target list
+      
+      // Try to fetch lookup details
+      // First, check if it's a Person field by trying to fetch from Graph users
+      const lookupIdsArray = Array.from(lookupIdsToExpand);
+      
+      // Check if IDs are GUIDs (Microsoft Graph user IDs)
+      const guidIds = lookupIdsArray.filter(id => {
+        const idStr = String(id);
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idStr);
+      });
+      
+      // Fetch Person field details from Microsoft Graph
+      if (guidIds.length > 0) {
+        const personDetailsMap = new Map<string, any>();
+        
+        // Fetch user details in parallel
+        const fetchPromises = guidIds.map(async (guidId) => {
+          try {
+            const userResponse = await this.makeGraphRequest(`users/${guidId}?$select=id,displayName,userPrincipalName,mail,jobTitle`);
+            return { id: guidId, details: userResponse };
+          } catch (error) {
+            // User not found or access denied
+            return null;
+          }
+        });
+        
+        const results = await Promise.all(fetchPromises);
+        results.forEach((result) => {
+          if (result && result.details) {
+            personDetailsMap.set(String(result.id), {
+              id: result.details.id,
+              displayName: result.details.displayName,
+              userPrincipalName: result.details.userPrincipalName,
+              email: result.details.mail || result.details.userPrincipalName,
+              mail: result.details.mail || result.details.userPrincipalName,
+              jobTitle: result.details.jobTitle,
+            });
+          }
+        });
+        
+        // Populate records with Person field details
+        recordsNeedingExpansion.forEach((record) => {
+          const lookupId = record[lookupIdField];
+          if (lookupId != null) {
+            const personDetails = personDetailsMap.get(String(lookupId));
+            if (personDetails) {
+              record[lookupField] = personDetails;
+            }
+          }
+        });
+      }
+      
+      // For non-GUID IDs (SharePoint list item IDs), try to resolve from cached employees
+      // This is useful for Assets list where assignee might point to Employees list
+      const integerIds = lookupIdsArray.filter(id => {
+        const idStr = String(id);
+        const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idStr);
+        if (isGuid) return false;
+        const intId = parseInt(idStr, 10);
+        return !isNaN(intId) && intId > 0;
+      });
+      
+      if (integerIds.length > 0 && cachedEmployees && cachedEmployees.length > 0) {
+        const integerDetailsMap = new Map<string, any>();
+        
+        integerIds.forEach((intId) => {
+          const intIdStr = String(intId);
+          const employee = this.findEmployeeById(cachedEmployees, intId);
+          
+          if (employee) {
+            // Create a person-like object from employee record
+            integerDetailsMap.set(intIdStr, {
+              id: employee.Id,
+              displayName: employee.Employee || employee.EmployeeName || employee.Title || employee.displayName,
+              userPrincipalName: employee.Email || employee.Mail || employee.userPrincipalName,
+              email: employee.Email || employee.Mail || employee.email || employee.mail,
+              mail: employee.Email || employee.Mail || employee.email || employee.mail,
+              jobTitle: employee.Designation || employee.JobTitle,
+            });
+          }
+        });
+        
+        // Populate records with integer lookup details
+        recordsNeedingExpansion.forEach((record) => {
+          const lookupId = record[lookupIdField];
+          if (lookupId != null && !record[lookupField]) {
+            const lookupDetails = integerDetailsMap.get(String(lookupId));
+            if (lookupDetails) {
+              record[lookupField] = lookupDetails;
+            }
+          }
+        });
+      }
+    }
   }
 
   /**
@@ -687,382 +849,6 @@ class SharePointService {
     return null;
   }
 
-  /**
-   * Resolve Assignee names for Assets - fetches from SharePoint only, no mapping to Employees records
-   */
-  private async resolveAssigneeNames(records: any[], siteId: string, cachedEmployees?: any[]): Promise<void> {
-    const lookupIdsToFetch = new Set<string>();
-    records.forEach((record: any) => {
-      // Check both internal name (field_2LookupId) and display name (e.g., AssigneeLookupId)
-      const lookupId = record.field_2LookupId ?? record.AssigneeLookupId ?? record['Assignee LookupId'];
-      if (lookupId != null) {
-        lookupIdsToFetch.add(String(lookupId));
-      }
-    });
-    
-    if (lookupIdsToFetch.size === 0) return;
-    
-    const userNameCache = new Map<string, string>();
-    
-    // First, check if field_2 or Assignee contains the employee object directly (already expanded)
-    // But verify it matches the lookupId before trusting it
-    for (const record of records) {
-      // Check both internal name and display name
-      const lookupId = record.field_2LookupId ?? record.AssigneeLookupId ?? record['Assignee LookupId'];
-      const assigneeField = record.field_2 ?? record.Assignee ?? record['Assignee'];
-      
-      if (lookupId != null) {
-        const lookupIdStr = String(lookupId);
-        
-        if (assigneeField && typeof assigneeField === 'object') {
-          const employeeObj = assigneeField;
-          
-          // Verify the object corresponds to the lookupId before trusting it
-          const objectId = employeeObj.id || employeeObj.Id || employeeObj.ID || 
-                          (employeeObj.fields && (employeeObj.fields.Id || employeeObj.fields.ID || employeeObj.fields.id));
-          const objectEmail = employeeObj.email || employeeObj.mail || employeeObj.Email || employeeObj.Mail ||
-                             (employeeObj.fields && (employeeObj.fields.Email || employeeObj.fields.email || employeeObj.fields.Mail || employeeObj.fields.mail));
-          
-          // Check if object ID or email matches lookupId (or if we can verify through cachedEmployees)
-          let isVerified = false;
-          if (objectId && String(objectId).toLowerCase() === lookupIdStr.toLowerCase()) {
-            isVerified = true;
-          } else if (objectEmail && String(objectEmail).toLowerCase() === lookupIdStr.toLowerCase()) {
-            isVerified = true;
-          } else if (cachedEmployees && cachedEmployees.length > 0) {
-            // Try to verify by finding the employee that matches both the lookupId and the object's properties
-            const matchingEmployee = this.findEmployeeById(cachedEmployees, lookupIdStr);
-            if (matchingEmployee) {
-              // Check if the object's properties match the found employee
-              const objDisplayName = employeeObj.displayName || employeeObj.DisplayName || employeeObj.Title || employeeObj.title;
-              const empDisplayName = matchingEmployee.Employee || matchingEmployee.EmployeeName || matchingEmployee.Title || matchingEmployee.displayName;
-              if (objDisplayName && empDisplayName && String(objDisplayName).toLowerCase() === String(empDisplayName).toLowerCase()) {
-                isVerified = true;
-              } else if (objectEmail) {
-                const empEmail = matchingEmployee.Email || matchingEmployee.Mail || matchingEmployee.email || matchingEmployee.mail;
-                if (empEmail && String(objectEmail).toLowerCase() === String(empEmail).toLowerCase()) {
-                  isVerified = true;
-                }
-              }
-            }
-          }
-          
-          if (!isVerified && (objectId || objectEmail)) {
-            // Expanded object verification failed, will resolve through proper channels
-          } else {
-            // Extract employee name from the expanded field_2 object - check more properties
-            const employeeName = employeeObj.displayName || 
-                               employeeObj.DisplayName ||
-                               employeeObj.Title ||
-                               employeeObj.title ||
-                               employeeObj.Employee ||
-                               employeeObj.EmployeeName ||
-                               employeeObj.Name ||
-                               employeeObj.name ||
-                               employeeObj.userPrincipalName ||
-                               employeeObj.userPrincipalName ||
-                               employeeObj.email ||
-                               employeeObj.mail ||
-                               employeeObj.Mail ||
-                               employeeObj.Email ||
-                               (employeeObj.fields && (
-                                 employeeObj.fields.Employee || 
-                                 employeeObj.fields.EmployeeName || 
-                                 employeeObj.fields.Title ||
-                                 employeeObj.fields.displayName ||
-                                 employeeObj.fields.DisplayName
-                               ));
-            
-            if (employeeName) {
-              userNameCache.set(lookupIdStr, String(employeeName));
-              lookupIdsToFetch.delete(lookupIdStr);
-            }
-          }
-        }
-      }
-    }
-    
-    // First, try to resolve from cachedEmployees (Microsoft Graph users) for GUIDs
-    if (lookupIdsToFetch.size > 0 && cachedEmployees && cachedEmployees.length > 0) {
-      const remainingIds = Array.from(lookupIdsToFetch);
-      remainingIds.forEach((lookupId) => {
-        // Check if it's a GUID (Microsoft Graph user ID format)
-        const isGuidFormat = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lookupId);
-        
-        // Try to find employee regardless of format
-        const cachedEmployee = this.findEmployeeById(cachedEmployees, lookupId);
-        if (cachedEmployee) {
-          const employeeName = cachedEmployee.Employee || 
-                              cachedEmployee.EmployeeName || 
-                              cachedEmployee.Title ||
-                              cachedEmployee.displayName ||
-                              cachedEmployee.DisplayName ||
-                              null;
-          if (employeeName) {
-            userNameCache.set(lookupId, String(employeeName));
-            lookupIdsToFetch.delete(lookupId);
-          }
-        }
-      });
-    }
-    
-    // Fetch remaining employee records from SharePoint Employees list
-    if (lookupIdsToFetch.size > 0) {
-      let employeesListId: string | null = null;
-      try {
-        employeesListId = await this.getListId('Employees');
-      } catch (error) {
-        // Employees list not found, skip fetching
-      }
-      
-      if (employeesListId) {
-        // Fetch employee records in parallel
-        const fetchPromises = Array.from(lookupIdsToFetch).map(async (lookupId) => {
-          try {
-            // Try to parse as integer (SharePoint list item ID)
-            const lookupIdInt = parseInt(lookupId, 10);
-            if (isNaN(lookupIdInt) || lookupIdInt <= 0) {
-              // If not an integer, try to resolve from cachedEmployees as fallback
-              if (cachedEmployees && cachedEmployees.length > 0) {
-                const cachedEmployee = this.findEmployeeById(cachedEmployees, lookupId);
-                if (cachedEmployee) {
-                  const employeeName = cachedEmployee.Employee || 
-                                      cachedEmployee.EmployeeName || 
-                                      cachedEmployee.Title ||
-                                      cachedEmployee.displayName ||
-                                      cachedEmployee.DisplayName ||
-                                      null;
-                  if (employeeName) {
-                    return { lookupId, employeeName };
-                  }
-                }
-              }
-              return null; // Skip non-integer IDs
-            }
-            
-            // Fetch employee from SharePoint Employees list
-            const employeeItem = await this.makeGraphRequest(
-              `sites/${siteId}/lists/${employeesListId}/items/${lookupIdInt}?$expand=fields`
-            );
-            
-            if (employeeItem?.fields) {
-              // First, try to extract employee name from SharePoint item
-              let employeeName = this.extractEmployeeName(employeeItem);
-              
-              // If no name found, check if there's a Person field with a Microsoft Graph user ID
-              if (!employeeName && cachedEmployees && cachedEmployees.length > 0) {
-                const fields = employeeItem.fields;
-                // Look for Person fields (they might be named Employee, AssignedTo, etc.)
-                for (const [fieldName, fieldValue] of Object.entries(fields)) {
-                  if (fieldValue && typeof fieldValue === 'object' && !Array.isArray(fieldValue)) {
-                    // Check if it's a Person field with an ID
-                    const personId = (fieldValue as any).id || (fieldValue as any).Id || (fieldValue as any).email || (fieldValue as any).mail;
-                    if (personId) {
-                      const cachedEmployee = this.findEmployeeById(cachedEmployees, personId);
-                      if (cachedEmployee) {
-                        employeeName = cachedEmployee.Employee || 
-                                      cachedEmployee.EmployeeName || 
-                                      cachedEmployee.Title ||
-                                      cachedEmployee.displayName ||
-                                      cachedEmployee.DisplayName ||
-                                      null;
-                        if (employeeName) break;
-                      }
-                    }
-                    // Also check displayName directly in the Person field
-                    const personDisplayName = (fieldValue as any).displayName || (fieldValue as any).DisplayName;
-                    if (personDisplayName) {
-                      employeeName = personDisplayName;
-                      break;
-                    }
-                  }
-                }
-              }
-              
-              if (employeeName) {
-                return { lookupId, employeeName };
-              }
-            }
-          } catch (error: any) {
-            // If SharePoint fetch fails, try cachedEmployees as fallback
-            if (cachedEmployees && cachedEmployees.length > 0) {
-              const cachedEmployee = this.findEmployeeById(cachedEmployees, lookupId);
-              if (cachedEmployee) {
-                const employeeName = cachedEmployee.Employee || 
-                                    cachedEmployee.EmployeeName || 
-                                    cachedEmployee.Title ||
-                                    cachedEmployee.displayName ||
-                                    cachedEmployee.DisplayName ||
-                                    null;
-                if (employeeName) {
-                  return { lookupId, employeeName };
-                }
-              }
-            }
-          }
-          return null;
-        });
-        
-        // Wait for all requests to complete in parallel
-        const results = await Promise.all(fetchPromises);
-        
-        // Populate cache from results
-        results.forEach((result) => {
-          if (result && result.employeeName) {
-            userNameCache.set(result.lookupId, result.employeeName);
-          }
-        });
-      } else {
-        // If Employees list doesn't exist, try to resolve all remaining IDs from cachedEmployees
-        if (cachedEmployees && cachedEmployees.length > 0) {
-          Array.from(lookupIdsToFetch).forEach((lookupId) => {
-            const cachedEmployee = this.findEmployeeById(cachedEmployees, lookupId);
-            if (cachedEmployee) {
-              const employeeName = cachedEmployee.Employee || 
-                                  cachedEmployee.EmployeeName || 
-                                  cachedEmployee.Title ||
-                                  cachedEmployee.displayName ||
-                                  cachedEmployee.DisplayName ||
-                                  null;
-              if (employeeName) {
-                userNameCache.set(lookupId, employeeName);
-              }
-            }
-          });
-        }
-      }
-    }
-    
-    // Fetch any remaining unresolved GUIDs directly from Microsoft Graph API
-    const unresolvedGuids = Array.from(lookupIdsToFetch).filter(id => {
-      const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-      return isGuid && !userNameCache.has(id);
-    });
-    
-    if (unresolvedGuids.length > 0) {
-      const graphFetchPromises = unresolvedGuids.map(async (guid) => {
-        try {
-          const userResponse = await this.makeGraphRequest(`users/${guid}`);
-          if (userResponse && userResponse.displayName) {
-            return { lookupId: guid, employeeName: userResponse.displayName };
-          }
-        } catch (error: any) {
-          // Failed to fetch user from Graph API
-        }
-        return null;
-      });
-      
-      const graphResults = await Promise.all(graphFetchPromises);
-      graphResults.forEach((result) => {
-        if (result && result.employeeName) {
-          userNameCache.set(result.lookupId, result.employeeName);
-        }
-      });
-    }
-    
-    // Populate Assignee field in all records
-    records.forEach((record: any, index: number) => {
-      // Check both internal name and display name
-      const lookupId = record.field_2LookupId ?? record.AssigneeLookupId ?? record['Assignee LookupId'];
-      if (lookupId != null) {
-        const lookupIdStr = String(lookupId);
-        
-        let employeeName: string | null = null;
-        
-        // First check if field_2 or Assignee contains the employee object directly
-        // IMPORTANT: Verify the object's ID matches the lookupId before trusting it
-        const assigneeField = record.field_2 ?? record.Assignee ?? record['Assignee'];
-        if (assigneeField && typeof assigneeField === 'object' && !Array.isArray(assigneeField)) {
-          const employeeObj = assigneeField;
-          
-          // Verify the object's ID matches the lookupId to ensure we have the correct employee
-          const objectId = employeeObj.id || employeeObj.Id || employeeObj.ID || 
-                          (employeeObj.fields && (employeeObj.fields.Id || employeeObj.fields.ID || employeeObj.fields.id));
-          const objectIdStr = objectId ? String(objectId) : null;
-          const lookupIdStr = String(lookupId);
-          
-          // If object has an ID, verify it matches the lookupId (case-insensitive for GUIDs)
-          const idsMatch = !objectIdStr || 
-                          objectIdStr.toLowerCase() === lookupIdStr.toLowerCase() ||
-                          (lookupIdStr && employeeObj.email && String(employeeObj.email).toLowerCase() === lookupIdStr.toLowerCase()) ||
-                          (lookupIdStr && employeeObj.mail && String(employeeObj.mail).toLowerCase() === lookupIdStr.toLowerCase());
-          
-          if (!idsMatch) {
-            // Expanded object ID does not match lookupId, ignoring expanded object
-          } else {
-            // Try all possible name properties
-            employeeName = employeeObj.displayName || 
-                           employeeObj.DisplayName ||
-                           employeeObj.title ||
-                           employeeObj.Title || 
-                           employeeObj.Employee ||
-                           employeeObj.EmployeeName ||
-                           employeeObj.name ||
-                           employeeObj.Name ||
-                           employeeObj.userPrincipalName ||
-                           employeeObj.UserPrincipalName ||
-                           employeeObj.email ||
-                           employeeObj.Email ||
-                           employeeObj.mail ||
-                           employeeObj.Mail ||
-                           (employeeObj.fields && (
-                             employeeObj.fields.Employee || 
-                             employeeObj.fields.EmployeeName || 
-                             employeeObj.fields.Title ||
-                             employeeObj.fields.displayName ||
-                             employeeObj.fields.DisplayName
-                           )) ||
-                           null;
-            
-            if (employeeName) {
-              record['Assignee'] = String(employeeName);
-              record['AssigneeName'] = String(employeeName);
-              return;
-            }
-          }
-        }
-        
-        // Use cached employee name from SharePoint resolution
-        if (!employeeName) {
-          employeeName = userNameCache.get(lookupIdStr) || null;
-        }
-        
-        // If still not found, try to resolve from cachedEmployees (Microsoft Graph users)
-        if (!employeeName && cachedEmployees && cachedEmployees.length > 0) {
-          const cachedEmployee = this.findEmployeeById(cachedEmployees, lookupId);
-          if (cachedEmployee) {
-            employeeName = cachedEmployee.Employee || 
-                          cachedEmployee.EmployeeName || 
-                          cachedEmployee.Title ||
-                          cachedEmployee.displayName ||
-                          cachedEmployee.DisplayName ||
-                          null;
-            
-            // Check if we fetched this GUID from Graph API
-            if (!employeeName) {
-              const graphFetchedName = userNameCache.get(lookupIdStr);
-              if (graphFetchedName) {
-                employeeName = graphFetchedName;
-              }
-            }
-          }
-        } else if (!cachedEmployees || cachedEmployees.length === 0) {
-          // Check if we fetched this GUID from Graph API
-          const graphFetchedName = userNameCache.get(lookupIdStr);
-          if (graphFetchedName) {
-            employeeName = graphFetchedName;
-          }
-        }
-        
-        if (employeeName) {
-          record['Assignee'] = String(employeeName);
-          record['AssigneeName'] = String(employeeName);
-        } else {
-          record['Assignee'] = `[ID: ${lookupIdStr}]`;
-        }
-      }
-    });
-  }
 
   /**
    * Insert a record into a SharePoint list
@@ -1098,13 +884,22 @@ class SharePointService {
     const listId = await this.getListId(listName);
     const siteId = await this.getSiteId();
     
-    // Get field mapping to convert internal names to display names
-    const fieldMapping = await this.getFieldMapping(listName);
+    // Get field mapping and lookup fields to convert internal names to display names
+    const { mapping: fieldMapping, lookupFields } = await this.getFieldMapping(listName);
     
-    // Expand fields to get all field values
-    // Note: Microsoft Graph API doesn't support nested expand for individual fields
-    // We'll expand fields and access field_2 directly from the fields object
-    const expandQuery = '$expand=fields';
+    // Build expand query to include lookup fields
+    // Microsoft Graph API supports expanding lookup fields within fields
+    let expandQuery = '$expand=fields';
+    if (lookupFields.length > 0) {
+      // For each lookup field, we need to expand it
+      // Microsoft Graph API syntax: $expand=fields(field_2)
+      // However, we can only expand one field at a time in nested expands
+      // So we'll expand the first lookup field, or use a different approach
+      // Actually, we can use: $expand=fields($expand=field_2) but this might not work
+      // Let's try expanding lookup fields by fetching them separately if needed
+      // For now, just expand fields and we'll handle lookup expansion below
+    }
+    
     const url = `sites/${siteId}/lists/${listId}/items?${expandQuery}`;
     
     const response = await this.makeGraphRequest(url);
@@ -1120,22 +915,27 @@ class SharePointService {
         ...fields,
       };
       
-      // Normalize field names: convert internal names (field_0, field_2, etc.) to display names
-      const normalizedRecord = this.normalizeFieldNames(record, fieldMapping);
-      
-      return normalizedRecord;
+      return record;
+    });
+    
+    // Expand lookup fields that only have LookupId but not the full object
+    // Do this BEFORE normalizing field names so expanded objects are in original field names
+    if (lookupFields.length > 0 && records.length > 0) {
+      await this.expandLookupFields(records, listName, siteId, listId, lookupFields, cachedEmployees);
+    }
+    
+    // Normalize field names: convert internal names (field_0, field_2, etc.) to display names
+    // This will copy expanded lookup objects to display name fields too
+    const normalizedRecords = records.map((record: any) => {
+      return this.normalizeFieldNames(record, fieldMapping);
     });
     
     // Resolve lookup fields (still use internal names for resolution logic)
-    if (listName === 'Access Cards' && records.length > 0) {
-      await this.resolveEmployeeNames(records, siteId, cachedEmployees);
+    if (listName === 'Access Cards' && normalizedRecords.length > 0) {
+      await this.resolveEmployeeNames(normalizedRecords, siteId, cachedEmployees);
     }
     
-    if (listName === 'Assets' && records.length > 0) {
-      await this.resolveAssigneeNames(records, siteId, cachedEmployees);
-    }
-    
-    return records;
+    return normalizedRecords;
   }
 
   /**
