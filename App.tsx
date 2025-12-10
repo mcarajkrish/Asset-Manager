@@ -202,6 +202,7 @@ export default function App() {
                   sharePointService={sharePointService}
                   listName={props.route.params.listName}
                   record={props.route.params.record}
+                  employees={employees}
                   onBack={() => props.navigation.goBack()}
                   onRecordUpdated={() => {
                     // Navigate back to list to refresh

@@ -1,4 +1,4 @@
-# Employee & Assets Allocation
+# Asset Management
 
 A React Native Expo mobile application for managing employee records and asset allocation in SharePoint. Connect to your SharePoint site to view, create, update, and manage employee and asset records.
 

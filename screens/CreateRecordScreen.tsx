@@ -26,7 +26,7 @@ const CreateRecordScreen: React.FC<CreateRecordScreenProps> = ({
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backButtonText}>← Back</Text>
+          <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Create Record</Text>
         <View style={styles.placeholder} />

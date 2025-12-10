@@ -486,7 +486,13 @@ const ListScreen: React.FC<ListScreenProps> = ({
           <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{listName}</Text>
-        {!onCreatePress && <View style={styles.placeholder} />}
+        {onCreatePress ? (
+          <TouchableOpacity onPress={onCreatePress} style={styles.createButton}>
+            <Text style={styles.createButtonText}>+</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.placeholder} />
+        )}
       </View>
 
       {/* Search Bar */}
@@ -649,7 +655,7 @@ const styles = StyleSheet.create({
     padding: 5,
   },
   backButtonText: {
-    fontSize: 16,
+    fontSize: 24,
     color: '#0078d4',
     fontWeight: '600',
   },
@@ -662,6 +668,14 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     width: 60,
+  },
+  createButton: {
+    padding: 5,
+  },
+  createButtonText: {
+    fontSize: 24,
+    color: '#0078d4',
+    fontWeight: '600',
   },
   searchContainer: {
     flexDirection: 'row',

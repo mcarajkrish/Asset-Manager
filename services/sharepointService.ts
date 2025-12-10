@@ -235,8 +235,21 @@ class SharePointService {
       },
     });
 
+    // Handle successful DELETE requests (204 No Content) - return early
+    // Also handle 200 status with empty body for DELETE operations
+    const isDeleteRequest = options.method === 'DELETE';
+    if (response.status === 204 || (isDeleteRequest && response.status === 200)) {
+      return null; // Success, but no content to return
+    }
+
     if (!response.ok) {
-      const errorText = await response.text();
+      let errorText = '';
+      try {
+        errorText = await response.text();
+      } catch (textError) {
+        // If we can't read error text, use status text
+        errorText = response.statusText || `HTTP ${response.status}`;
+      }
       
       // Check for 401 Unauthorized (session timeout/expired token)
       if (response.status === 401) {
@@ -249,20 +262,22 @@ class SharePointService {
       if (response.status === 403) {
         // Try to parse error to see if it's token-related
         try {
-          const errorJson = JSON.parse(errorText);
-          const errorCode = errorJson.error?.code || '';
-          const errorMessage = errorJson.error?.message || '';
-          
-          // Check for token expiration indicators
-          if (
-            errorCode.includes('InvalidAuthenticationToken') ||
-            errorCode.includes('AuthenticationTokenExpired') ||
-            errorMessage.includes('token') ||
-            errorMessage.includes('expired') ||
-            errorMessage.includes('authentication')
-          ) {
-            this.handleSessionTimeout();
-            throw new SessionTimeoutError('Your session has expired. Please log in again.');
+          if (errorText) {
+            const errorJson = JSON.parse(errorText);
+            const errorCode = errorJson.error?.code || '';
+            const errorMessage = errorJson.error?.message || '';
+            
+            // Check for token expiration indicators
+            if (
+              errorCode.includes('InvalidAuthenticationToken') ||
+              errorCode.includes('AuthenticationTokenExpired') ||
+              errorMessage.includes('token') ||
+              errorMessage.includes('expired') ||
+              errorMessage.includes('authentication')
+            ) {
+              this.handleSessionTimeout();
+              throw new SessionTimeoutError('Your session has expired. Please log in again.');
+            }
           }
         } catch (parseError) {
           // If error parsing fails, continue with generic error
@@ -272,7 +287,36 @@ class SharePointService {
       throw new Error(`Microsoft Graph API error: ${response.status} - ${errorText}`);
     }
 
-    return response.json();
+    // For DELETE requests, even if status is 200, return null (no content expected)
+    if (isDeleteRequest) {
+      return null;
+    }
+
+    // Check if response has content before trying to parse JSON
+    const contentType = response.headers.get('content-type');
+    const contentLength = response.headers.get('content-length');
+    
+    // If content-length is 0, return null without trying to parse
+    if (contentLength === '0') {
+      return null;
+    }
+
+    // Try to parse JSON, but handle empty responses gracefully
+    try {
+      const text = await response.text();
+      if (!text || text.trim() === '') {
+        return null;
+      }
+      return JSON.parse(text);
+    } catch (parseError: any) {
+      // If JSON parsing fails but status is OK, return null (empty response)
+      // This handles cases where response is successful but body is empty/invalid JSON
+      if (response.ok) {
+        return null;
+      }
+      // If status is not OK, rethrow the original error
+      throw parseError;
+    }
   }
 
   /**
@@ -574,6 +618,95 @@ class SharePointService {
   }
 
   /**
+   * Resolve Graph API user ID or email to SharePoint User Information List ID
+   */
+  async resolveSharePointUserId(graphUserIdOrEmail: string): Promise<number | null> {
+    if (!graphUserIdOrEmail || !this.accessToken) {
+      return null;
+    }
+    
+    try {
+      const userInfoListId = await this.getUserInformationListId();
+      if (!userInfoListId) {
+        return null;
+      }
+      
+      const siteId = await this.getSiteId();
+      
+      // Try to find user by email or principal name
+      // First, get user info from Graph API if it's a Graph user ID
+      let userEmail: string | null = null;
+      let userName: string | null = null;
+      try {
+        const graphUser = await this.makeGraphRequest(`users/${graphUserIdOrEmail}`);
+        userEmail = graphUser.mail || graphUser.userPrincipalName;
+        userName = graphUser.displayName;
+      } catch (error) {
+        // If it's already an email, use it directly
+        if (graphUserIdOrEmail.includes('@')) {
+          userEmail = graphUserIdOrEmail;
+        }
+      }
+      
+      if (!userEmail) {
+        return null;
+      }
+      
+      // Get all users from User Information List and search manually
+      // This is more reliable than filter queries which may not work with all SharePoint setups
+      let allUsers: any[] = [];
+      let nextLink: string | null = null;
+      let pageCount = 0;
+      const maxPages = 10; // Limit pages to prevent infinite loops
+      
+      do {
+        const endpoint = nextLink 
+          ? nextLink.replace('https://graph.microsoft.com/v1.0/', '')
+          : `sites/${siteId}/lists/${userInfoListId}/items?$expand=fields&$top=100`;
+        
+        const response = await this.makeGraphRequest(endpoint);
+        const items = response.value || [];
+        allUsers.push(...items);
+        
+        nextLink = response['@odata.nextLink'] || null;
+        pageCount++;
+        
+        if (pageCount >= maxPages) {
+          break;
+        }
+      } while (nextLink);
+      
+      // Search for matching user by email or name
+      for (const userItem of allUsers) {
+        const fields = userItem.fields || {};
+        const itemEmail = fields.Email || fields.EMail || fields.Mail || '';
+        const itemName = fields.Name || fields.Title || '';
+        const itemPrincipalName = fields.UserName || fields.PrincipalName || '';
+        
+        // Match by email (case-insensitive)
+        if (itemEmail && itemEmail.toLowerCase() === userEmail.toLowerCase()) {
+          return parseInt(userItem.id, 10);
+        }
+        
+        // Match by principal name (case-insensitive)
+        if (itemPrincipalName && itemPrincipalName.toLowerCase() === userEmail.toLowerCase()) {
+          return parseInt(userItem.id, 10);
+        }
+        
+        // Match by name if available
+        if (userName && itemName && itemName.toLowerCase() === userName.toLowerCase()) {
+          return parseInt(userItem.id, 10);
+        }
+      }
+      
+      return null;
+    } catch (error: any) {
+      console.error('Error resolving SharePoint user ID:', error);
+      return null;
+    }
+  }
+
+  /**
    * Resolve SharePoint user ID to display name using User Information List
    */
   private async resolveUserDisplayName(userId: number | string): Promise<string | null> {
@@ -715,6 +848,7 @@ class SharePointService {
         method: 'DELETE',
       }
     );
+    // DELETE requests return 204 No Content, which is handled in makeGraphRequest
   }
 
   /**

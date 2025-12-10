@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Employee & Assets Allocation",
-    "slug": "employee-assets-allocation",
+    "name": "Asset Management",
+    "slug": "asset-management",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

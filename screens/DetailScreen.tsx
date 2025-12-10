@@ -8,6 +8,7 @@ interface DetailScreenProps {
   record: any;
   onBack: () => void;
   onRecordUpdated: () => void;
+  employees?: any[];
 }
 
 const DetailScreen: React.FC<DetailScreenProps> = ({
@@ -16,6 +17,7 @@ const DetailScreen: React.FC<DetailScreenProps> = ({
   record,
   onBack,
   onRecordUpdated,
+  employees = [],
 }) => {
   return (
     <RecordView
@@ -25,6 +27,7 @@ const DetailScreen: React.FC<DetailScreenProps> = ({
       onClose={onBack}
       onRecordUpdated={onRecordUpdated}
       onRecordDeleted={onRecordUpdated}
+      employees={employees}
     />
   );
 };

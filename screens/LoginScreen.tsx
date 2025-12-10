@@ -63,9 +63,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ sharePointService, onLoginSuc
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.title}>Employee & Assets Allocation</Text>
+        <Text style={styles.title}>Asset Management</Text>
         <Text style={styles.subtitle}>
-          Manage employee records and assets allocation in SharePoint
+          Manage Assets and Access Cards
         </Text>
         <TouchableOpacity
           style={[styles.connectButton, isConnecting && styles.buttonDisabled]}
@@ -75,7 +75,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ sharePointService, onLoginSuc
           {isConnecting ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.connectButtonText}>Connect to SharePoint</Text>
+            <Text style={styles.connectButtonText}>Login</Text>
           )}
         </TouchableOpacity>
       </ScrollView>

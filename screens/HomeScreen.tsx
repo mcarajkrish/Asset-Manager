@@ -61,7 +61,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Employee & Assets Allocation</Text>
+          <Text style={styles.title}>Asset Management</Text>
           <View style={styles.connectedBadge}>
             <View style={styles.connectedDot} />
             <Text style={styles.connectedText}>Connected</Text>
