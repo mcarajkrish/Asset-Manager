@@ -312,20 +312,20 @@ const ListScreen: React.FC<ListScreenProps> = ({
   };
 
   const renderAccessCardRecord = (record: Record) => {
-
+    console.log('record', record);
     return (
       <View style={styles.accessCardContent}>
         <View style={styles.accessCardRow}>
-          <Text style={styles.accessCardLabel}>Access Card No:</Text>
+          <Text style={styles.accessCardLabel}>Access Card No :</Text>
           <Text style={styles.accessCardValue}>{record['AccessCardNo'] || '-'}</Text>
         </View>
         <View style={styles.accessCardRow}>
-          <Text style={styles.accessCardLabel}>Assignee:</Text>
-          <Text style={styles.accessCardValue}>{record['Employee'] || '-'}</Text>
+          <Text style={styles.accessCardLabel}>Assignee :</Text>
+          <Text style={styles.accessCardValue}>{record['EmployeeLookupId'] || '-'}</Text>
         </View>
         <View style={styles.accessCardRow}>
-          <Text style={styles.accessCardLabel}>Emp Id:</Text>
-          <Text style={styles.accessCardValue}>{record['EmpId'] || '-'}</Text>
+          <Text style={styles.accessCardLabel}>Emp Id :</Text>
+          <Text style={styles.accessCardValue}>{record['EmpID'] || '-'}</Text>
         </View>
       </View>
     );
@@ -336,15 +336,15 @@ const ListScreen: React.FC<ListScreenProps> = ({
     return (
       <View style={styles.accessCardContent}>
         <View style={styles.accessCardRow}>
-          <Text style={styles.accessCardLabel}>Name:</Text>
+          <Text style={styles.accessCardLabel}>Name :</Text>
           <Text style={styles.accessCardValue}>{record['displayName'] || '-'}</Text>
         </View>
         <View style={styles.accessCardRow}>
-          <Text style={styles.accessCardLabel}>Mail Id:</Text>
+          <Text style={styles.accessCardLabel}>Mail Id :</Text>
           <Text style={styles.accessCardValue}>{record['mail'] || '-'}</Text>
         </View>
         <View style={styles.accessCardRow}>
-          <Text style={styles.accessCardLabel}>Designation:</Text>
+          <Text style={styles.accessCardLabel}>Designation :</Text>
           <Text style={styles.accessCardValue}>{record['jobTitle'] || '-'}</Text>
         </View>
       </View>
@@ -352,24 +352,23 @@ const ListScreen: React.FC<ListScreenProps> = ({
   };
 
   const renderAssetRecord = (record: Record) => {
-
     return (
       <View style={styles.accessCardContent}>
         <View style={styles.accessCardRow}>
-          <Text style={styles.accessCardLabel}>Asset Id:</Text>
+          <Text style={styles.accessCardLabel}>Asset Id :</Text>
           <Text style={styles.accessCardValue}>{record['AssetID'] || '-'}</Text>
         </View>
         <View style={styles.accessCardRow}>
-          <Text style={styles.accessCardLabel}>Asset:</Text>
+          <Text style={styles.accessCardLabel}>Asset :</Text>
           <Text style={styles.accessCardValue}>{record['Company'] || ''} {record['Model'] || ''}</Text>
         </View>
         <View style={styles.accessCardRow}>
-          <Text style={styles.accessCardLabel}>Serial Number:</Text>
-          <Text style={styles.accessCardValue}>{record['Serial Number'] || '-'}</Text>
+          <Text style={styles.accessCardLabel}>Serial Number :</Text>
+          <Text style={styles.accessCardValue}>{record['field_4'] || '-'}</Text>
         </View>
         <View style={styles.accessCardRow}>
-          <Text style={styles.accessCardLabel}>Assignee:</Text>
-          <Text style={styles.accessCardValue}>{record['Id'] || '-'}</Text>
+          <Text style={styles.accessCardLabel}>Assignee :</Text>
+          <Text style={styles.accessCardValue}>{record['field_2LookupId'] || '-'}</Text>
         </View>
       </View>
     );
