@@ -103,32 +103,6 @@ const ListScreen: React.FC<ListScreenProps> = ({
     loadRecords();
   };
 
-  const handleDelete = async (recordId: number | string) => {
-    Alert.alert(
-      'Delete Record',
-      'Are you sure you want to delete this record? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await sharePointService.deleteRecord(listName, recordId);
-              Alert.alert('Success', 'Record deleted successfully!');
-              loadRecords();
-            } catch (error: any) {
-              // Handle session timeout - don't show alert as App.tsx will handle it
-              if (error instanceof SessionTimeoutError) {
-                return;
-              }
-              Alert.alert('Error', error.message || 'Failed to delete record');
-            }
-          },
-        },
-      ]
-    );
-  };
 
   // Search function to check if record matches search query
   const matchesSearch = (record: Record, query: string): boolean => {
@@ -374,7 +348,6 @@ const ListScreen: React.FC<ListScreenProps> = ({
   };
 
   const renderAccessCardRecord = (record: Record) => {
-
     return (
       <View style={styles.accessCardContent}>
         <View style={styles.accessCardRow}>
@@ -394,7 +367,6 @@ const ListScreen: React.FC<ListScreenProps> = ({
   };
 
   const renderEmployeeRecord = (record: Record) => {
-    
     return (
       <View style={styles.accessCardContent}>
         <View style={styles.accessCardRow}>
@@ -414,7 +386,6 @@ const ListScreen: React.FC<ListScreenProps> = ({
   };
 
   const renderAssetRecord = (record: Record) => {
-
     return (
       <View style={styles.accessCardContent}>
         <View style={styles.accessCardRow}>
@@ -741,23 +712,6 @@ const styles = StyleSheet.create({
   },
   recordContent: {
     flex: 1,
-  },
-  recordTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
-  },
-  recordId: {
-    fontSize: 12,
-    color: '#999',
-  },
-  deleteButton: {
-    justifyContent: 'center',
-    paddingLeft: 15,
-  },
-  deleteButtonText: {
-    fontSize: 20,
   },
   accessCardContent: {
     flex: 1,
