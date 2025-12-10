@@ -7,6 +7,7 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as AuthSession from 'expo-auth-session';
@@ -63,6 +64,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ sharePointService, onLoginSuc
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        <Image source={require('../assets/appicon.png')} style={styles.logo} />
         <Text style={styles.title}>Asset Management</Text>
         <Text style={styles.subtitle}>
           Manage Assets and Access Cards
@@ -93,6 +95,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+  },
+  logo: {
+    width: 120,
+    height: 120,
+    marginBottom: 20,
+    resizeMode: 'contain',
   },
   title: {
     fontSize: 28,
