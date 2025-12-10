@@ -889,17 +889,7 @@ class SharePointService {
     
     // Build expand query to include lookup fields
     // Microsoft Graph API supports expanding lookup fields within fields
-    let expandQuery = '$expand=fields';
-    if (lookupFields.length > 0) {
-      // For each lookup field, we need to expand it
-      // Microsoft Graph API syntax: $expand=fields(field_2)
-      // However, we can only expand one field at a time in nested expands
-      // So we'll expand the first lookup field, or use a different approach
-      // Actually, we can use: $expand=fields($expand=field_2) but this might not work
-      // Let's try expanding lookup fields by fetching them separately if needed
-      // For now, just expand fields and we'll handle lookup expansion below
-    }
-    
+    const expandQuery = '$expand=fields';
     const url = `sites/${siteId}/lists/${listId}/items?${expandQuery}`;
     
     const response = await this.makeGraphRequest(url);
@@ -1044,15 +1034,10 @@ class SharePointService {
   async getAllUsers(): Promise<Array<{
     id: string;
     displayName: string;
-    userPrincipalName: string;
     mail: string;
     jobTitle?: string;
-    officeLocation?: string;
-    department?: string;
   }>> {
     try {
-      // Fetch all users from Microsoft Graph API with pagination
-      // Using $select to get only needed fields for better performance
       const allUsers: any[] = [];
       let nextLink: string | null = null;
       let pageCount = 0;
@@ -1061,7 +1046,7 @@ class SharePointService {
       do {
         const endpoint = nextLink 
           ? nextLink.replace('https://graph.microsoft.com/v1.0/', '') // Remove base URL if present
-          : `users?$select=id,displayName,userPrincipalName,mail,jobTitle,officeLocation,department&$top=999`;
+          : `users?$select=id,displayName,mail,jobTitle&$top=999`;
         
         const response = await this.makeGraphRequest(endpoint);
         
@@ -1069,11 +1054,8 @@ class SharePointService {
           const users = response.value.map((user: any) => ({
             id: user.id,
             displayName: user.displayName || '',
-            userPrincipalName: user.userPrincipalName || '',
-            mail: user.mail || user.userPrincipalName || '',
+            mail: user.mail || '',
             jobTitle: user.jobTitle,
-            officeLocation: user.officeLocation,
-            department: user.department,
           }));
           
           allUsers.push(...users);
@@ -1106,69 +1088,14 @@ class SharePointService {
   }
 
   /**
-   * Get list of admin users
-   */
-  async getAdminUsers(): Promise<Array<{
-    id: string;
-    displayName: string;
-    userPrincipalName: string;
-    mail: string;
-    roles: string[];
-  }>> {
-    try {
-      const rolesResponse = await this.makeGraphRequest('directoryRoles');
-      const globalAdminRole = rolesResponse.value?.find(
-        (role: any) => role.roleTemplateId === '62e90394-69f5-4237-9190-012177145e10'
-      );
-
-      if (!globalAdminRole) {
-        return [];
-      }
-
-      const membersResponse = await this.makeGraphRequest(
-        `directoryRoles/${globalAdminRole.id}/members`
-      );
-
-      const admins = [];
-      for (const member of membersResponse.value || []) {
-        if (member['@odata.type'] === '#microsoft.graph.user') {
-          admins.push({
-            id: member.id,
-            displayName: member.displayName,
-            userPrincipalName: member.userPrincipalName,
-            mail: member.mail || member.userPrincipalName,
-            roles: ['Global Administrator'],
-          });
-        }
-      }
-
-      return admins;
-    } catch (error: any) {
-      const errorMessage = error.message || '';
-      if (
-        errorMessage.includes('403') || 
-        errorMessage.includes('Forbidden') ||
-        errorMessage.includes('Insufficient') ||
-        errorMessage.includes('Directory.Read') ||
-        errorMessage.includes('User.Read.All')
-      ) {
-        return [];
-      }
-      return [];
-    }
-  }
-
-  /**
    * Get current user info with admin status
    */
   async getCurrentUserWithAdminStatus(): Promise<{
     user: {
       id: string;
       displayName: string;
-      userPrincipalName: string;
       mail: string;
       jobTitle?: string;
-      officeLocation?: string;
     };
     isAdmin: boolean;
     roles: string[];

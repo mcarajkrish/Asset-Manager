@@ -14,14 +14,4 @@ export const SharePointConfig = {
   defaultListName: 'Assets', // Default to Assets list
 };
 
-// Instructions:
-// 1. Go to Azure Portal (https://portal.azure.com)
-// 2. Navigate to Azure Active Directory > App registrations
-// 3. Click "New registration"
-// 4. Name your app and set redirect URI (for mobile: expo-auth-session will handle this)
-// 5. Go to "API permissions" and add:
-//    - Microsoft Graph: Sites.ReadWrite.All
-//    - SharePoint: Sites.ReadWrite.All
-// 6. Copy the Application (client) ID and Directory (tenant) ID
-// 7. Update the values above
 

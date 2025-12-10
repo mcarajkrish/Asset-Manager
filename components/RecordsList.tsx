@@ -79,33 +79,6 @@ const RecordsList: React.FC<RecordsListProps> = ({
     }
   };
 
-  const handleDelete = async (recordId: number) => {
-    Alert.alert(
-      'Delete Record',
-      'Are you sure you want to delete this record? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await sharePointService.deleteRecord(listName, recordId);
-              Alert.alert('Success', 'Record deleted successfully!');
-              await loadRecords();
-              if (onRecordUpdated) {
-                onRecordUpdated();
-              }
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to delete record');
-              console.error('Delete error:', error);
-            }
-          },
-        },
-      ]
-    );
-  };
-
   if (selectedRecord) {
     return (
       <RecordView
@@ -199,15 +172,6 @@ const RecordsList: React.FC<RecordsListProps> = ({
                 <Text style={styles.recordTitle}>{getDisplayValue(record)}</Text>
                 <Text style={styles.recordId}>ID: {record.Id}</Text>
               </View>
-              {/* <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  handleDelete(record.Id);
-                }}
-              >
-                <Text style={styles.deleteButtonText}>🗑️</Text>
-              </TouchableOpacity> */}
             </TouchableOpacity>
           ))
         )}
@@ -294,13 +258,6 @@ const styles = StyleSheet.create({
   recordId: {
     fontSize: 12,
     color: '#999',
-  },
-  deleteButton: {
-    justifyContent: 'center',
-    paddingLeft: 15,
-  },
-  deleteButtonText: {
-    fontSize: 20,
   },
   errorContainer: {
     backgroundColor: '#ffebee',

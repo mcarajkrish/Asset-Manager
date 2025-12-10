@@ -5,7 +5,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import SharePointService, { SessionTimeoutError } from '../services/sharepointService';
@@ -45,23 +44,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
       setLoadingEmployees(true);
       // Fetch all users from the organization using Microsoft Graph API
       const allUsers = await sharePointService.getAllUsers();
-      
-      // Transform users to match the expected employee format
-      const employeesList = allUsers.map((user: any) => ({
-        Id: user.id,
-        EmpID: user.userPrincipalName.split('@')[0] || user.id, // Use UPN prefix or ID as Emp ID
-        Employee: user.displayName || user.userPrincipalName,
-        EmployeeName: user.displayName || user.userPrincipalName,
-        Title: user.displayName || user.userPrincipalName,
-        Email: user.mail || user.userPrincipalName,
-        Mail: user.mail || user.userPrincipalName,
-        JobTitle: user.jobTitle,
-        Department: user.department,
-        OfficeLocation: user.officeLocation,
-        UserPrincipalName: user.userPrincipalName,
-      }));
-
-      setEmployees(employeesList);
+      setEmployees(allUsers);
     } catch (error: any) {
       // Handle session timeout - don't show alert as App.tsx will handle it
       if (error instanceof SessionTimeoutError) {

@@ -188,14 +188,6 @@ const RecordView: React.FC<RecordViewProps> = ({
           <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{getTitle()}</Text>
-        {/* {!isEditing && !isOrganizationUser && (
-          <TouchableOpacity
-            onPress={handleDelete}
-            style={styles.deleteButton}
-          >
-            <Text style={styles.deleteButtonText}>🗑️</Text>
-          </TouchableOpacity>
-        )} */}
         {!isEditing && isOrganizationUser && <View style={styles.placeholder} />}
       </View>
 
@@ -288,12 +280,6 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
   },
-  deleteButton: {
-    padding: 5,
-  },
-  deleteButtonText: {
-    fontSize: 20,
-  },
   scrollView: {
     flex: 1,
   },
@@ -339,23 +325,6 @@ const styles = StyleSheet.create({
     padding: 10,
     backgroundColor: '#fff',
   },
-  footer: {
-    padding: 15,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-  },
-  editButton: {
-    backgroundColor: '#0078d4',
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  editButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
   editActions: {
     flexDirection: 'row',
     gap: 10,
@@ -390,19 +359,6 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     width: 40,
-  },
-  infoBox: {
-    backgroundColor: '#e3f2fd',
-    padding: 15,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#90caf9',
-  },
-  infoText: {
-    color: '#1976d2',
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
   },
 });
 

@@ -22,16 +22,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ sharePointService, onLoginSuc
   const [redirectUri, setRedirectUri] = useState<string>('');
 
   useEffect(() => {
-    // Use a fixed custom scheme URI that doesn't depend on IP address
-    // Note: Custom schemes work in development/production builds, but Expo Go will fall back to exp://
     let uri = AuthSession.makeRedirectUri({
       scheme: 'employee-assets',
       path: 'auth',
     });
     
-    // Fallback: If still using exp:// scheme (Expo Go limitation), use localhost which is more stable
     if (uri.startsWith('exp://')) {
-      // Try to use localhost instead of IP for stability
       const localhostUri = AuthSession.makeRedirectUri({
         preferLocalhost: true,
       });
@@ -71,20 +67,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ sharePointService, onLoginSuc
         <Text style={styles.subtitle}>
           Manage employee records and assets allocation in SharePoint
         </Text>
-
-        {redirectUri && (
-          <View style={styles.redirectUriContainer}>
-            <Text style={styles.redirectUriLabel}>Redirect URI:</Text>
-            <Text style={styles.redirectUriText} selectable={true}>
-              {redirectUri}
-            </Text>
-            <Text style={styles.redirectUriNote}>
-              ✅ This URI is fixed and will not change with your IP address{'\n'}
-              ⚠️ Make sure this exact URI is added to Azure AD → Authentication → Redirect URIs
-            </Text>
-          </View>
-        )}
-
         <TouchableOpacity
           style={[styles.connectButton, isConnecting && styles.buttonDisabled]}
           onPress={handleConnect}

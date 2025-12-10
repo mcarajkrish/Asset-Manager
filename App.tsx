@@ -160,23 +160,7 @@ export default function App() {
                     onRefreshEmployees={isEmployeesList ? async () => {
                       try {
                         // Fetch all users from the organization
-                        const allUsers = await sharePointService.getAllUsers();
-                        
-                        // Transform users to match the expected employee format
-                        const employeesList = allUsers.map((user: any) => ({
-                          Id: user.id,
-                          EmpID: user.userPrincipalName.split('@')[0] || user.id,
-                          Employee: user.displayName || user.userPrincipalName,
-                          EmployeeName: user.displayName || user.userPrincipalName,
-                          Title: user.displayName || user.userPrincipalName,
-                          Email: user.mail || user.userPrincipalName,
-                          Mail: user.mail || user.userPrincipalName,
-                          JobTitle: user.jobTitle,
-                          Department: user.department,
-                          OfficeLocation: user.officeLocation,
-                          UserPrincipalName: user.userPrincipalName,
-                        }));
-                        
+                        const employeesList = await sharePointService.getAllUsers();
                         setEmployees(employeesList);
                       } catch (error) {
                         console.error('Error refreshing employees:', error);

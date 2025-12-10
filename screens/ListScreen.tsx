@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
@@ -312,324 +312,64 @@ const ListScreen: React.FC<ListScreenProps> = ({
   };
 
   const renderAccessCardRecord = (record: Record) => {
-    const accessCardNo = getFieldValue(record, ['AccessCardNo']);
-    
-    const allKeys = Object.keys(record);
-    const employeeFieldKeys = allKeys.filter(key => {
-      const keyLower = key.toLowerCase();
-      const isIdField = keyLower.endsWith('id') || keyLower.endsWith('lookupid');
-      return (keyLower.includes('employee') || keyLower.includes('emp')) && !isIdField;
-    });
-    
-    console.log('employeeFieldKeys', record);
-    // Try multiple variations of Employee field names (excluding ID fields)
-    const employee = getFieldValue(record, [
-      'Employee', 
-      'EmployeeName', 
-      'EmployeeName_x003a_', 
-      'Employee/Title',
-      'Employee_x003a_Title',
-      'Employee_x003a_Name',
-      ...employeeFieldKeys
-    ]);
-    
-    const empId = getFieldValue(record, ['EmpId']);
 
     return (
       <View style={styles.accessCardContent}>
         <View style={styles.accessCardRow}>
           <Text style={styles.accessCardLabel}>Access Card No:</Text>
-          <Text style={styles.accessCardValue}>{accessCardNo}</Text>
+          <Text style={styles.accessCardValue}>{record['AccessCardNo'] || '-'}</Text>
         </View>
         <View style={styles.accessCardRow}>
           <Text style={styles.accessCardLabel}>Assignee:</Text>
-          <Text style={styles.accessCardValue}>{employee}</Text>
+          <Text style={styles.accessCardValue}>{record['Employee'] || '-'}</Text>
         </View>
         <View style={styles.accessCardRow}>
           <Text style={styles.accessCardLabel}>Emp Id:</Text>
-          <Text style={styles.accessCardValue}>{empId}</Text>
+          <Text style={styles.accessCardValue}>{record['EmpId'] || '-'}</Text>
         </View>
       </View>
     );
   };
 
   const renderEmployeeRecord = (record: Record) => {
-    // Get Emp ID - try multiple field name variations
-    const empId = getFieldValue(record, [
-      'EmpID'
-    ]);
     
-    // Get Emp Name - try multiple field name variations and search more thoroughly
-    // First, try common field names
-    let empName = getFieldValue(record, [
-      'Employee',
-      'EmployeeName',
-      'Title',
-      'Name',
-      'EmployeeName_x003a_',
-      'Employee/Title',
-      'Employee_x003a_Title',
-      'Employee_x003a_Name',
-      'FullName',
-      'DisplayName'
-    ]);
-    
-    // If not found, search through all fields for name-like values
-    if (empName === '-' || !empName || empName.trim() === '') {
-      const allKeys = Object.keys(record);
-      const empIdValue = empId;
-      const skipFieldPatterns = [
-        'lookupid', 'lookup', 'odata', 'contenttype', 'modified', 'created',
-        'author', 'editor', 'attachments', 'edit', 'folder', 'item', 'compliance',
-        'version', 'status', 'cardstatus', 'accesscardno', 'assets'
-      ];
-      
-      // Look for fields that might contain the name
-      for (const key of allKeys) {
-        const keyLower = key.toLowerCase();
-        
-        // Skip system/metadata fields
-        if (keyLower.startsWith('_') || 
-            skipFieldPatterns.some(pattern => keyLower.includes(pattern))) {
-          continue;
-        }
-        
-        // Skip if it's clearly an ID field (ends with 'id' or 'lookupid', but allow fields like 'EmployeeId' if they contain 'name' or 'employee')
-        if ((keyLower.endsWith('id') || keyLower.endsWith('lookupid')) && 
-            !keyLower.includes('name') && !keyLower.includes('employee')) {
-          continue;
-        }
-        
-        // Skip email/mail fields (we'll get those separately)
-        if (keyLower.includes('email') || keyLower.includes('mail')) {
-          continue;
-        }
-        
-        const value = record[key];
-        if (value && typeof value === 'string' && value.trim() !== '') {
-          const valueStr = String(value).trim();
-          // Skip if it's the same as Emp ID
-          if (valueStr === empIdValue || valueStr === empId) continue;
-          // Skip if it looks like an ID (starts with HPH and numbers)
-          if (valueStr.match(/^HPH\s?\d+/)) continue;
-          // Skip short values or numbers only
-          if (valueStr.length < 3 || valueStr.match(/^\d+$/)) continue;
-          // Skip common non-name values
-          if (['Assigned', 'Available', 'Item', 'ContentType', 'Edit'].includes(valueStr)) continue;
-          // Skip date strings
-          if (valueStr.match(/^\d{4}-\d{2}-\d{2}/)) continue;
-          
-          // If it looks like a name (has letters and spaces, reasonable length)
-          if ((valueStr.match(/^[A-Za-z\s.]+$/) && valueStr.length > 5) || 
-              (valueStr.includes(' ') && valueStr.length > 8)) {
-            empName = valueStr;
-            break;
-          }
-        } else if (value && typeof value === 'object' && !Array.isArray(value)) {
-          // Check if it's an object with displayName or Title
-          if (value.displayName) {
-            empName = String(value.displayName);
-            break;
-          } else if (value.Title) {
-            empName = String(value.Title);
-            break;
-          } else if (value.name) {
-            empName = String(value.name);
-            break;
-          }
-        }
-      }
-      
-    }
-    
-    // Get Mail/Email - try multiple field name variations
-    const mailId = getFieldValue(record, [
-      'Email',
-      'Mail',
-      'email',
-      'mail',
-      'EmailAddress',
-      'EmailAddress0',
-      'MailAddress',
-      'UserPrincipalName',
-      'userPrincipalName',
-      'UPN'
-    ]);
-    
-    // Get Designation/JobTitle - try multiple field name variations
-    const designation = getFieldValue(record, [
-      'Designation',
-      'JobTitle',
-      'jobTitle',
-      'Title',
-      'Position',
-      'Role',
-      'Job Title',
-      'Designation0'
-    ]);
-
     return (
       <View style={styles.accessCardContent}>
         <View style={styles.accessCardRow}>
-          <Text style={styles.accessCardLabel}>Emp Name:</Text>
-          <Text style={styles.accessCardValue}>{empName || '-'}</Text>
+          <Text style={styles.accessCardLabel}>Name:</Text>
+          <Text style={styles.accessCardValue}>{record['displayName'] || '-'}</Text>
         </View>
         <View style={styles.accessCardRow}>
           <Text style={styles.accessCardLabel}>Mail Id:</Text>
-          <Text style={styles.accessCardValue}>{mailId}</Text>
-        </View>
-        <View style={styles.accessCardRow}>
-          <Text style={styles.accessCardLabel}>Emp Id:</Text>
-          <Text style={styles.accessCardValue}>{empId}</Text>
+          <Text style={styles.accessCardValue}>{record['mail'] || '-'}</Text>
         </View>
         <View style={styles.accessCardRow}>
           <Text style={styles.accessCardLabel}>Designation:</Text>
-          <Text style={styles.accessCardValue}>{designation || '-'}</Text>
+          <Text style={styles.accessCardValue}>{record['jobTitle'] || '-'}</Text>
         </View>
       </View>
     );
   };
 
   const renderAssetRecord = (record: Record) => {
-    // Debug: Log all available fields for Assets
-    const recordIndex = records.indexOf(record);
-    if (recordIndex === 0) {
-      const nonEmptyFields = Object.entries(record)
-        .filter(([key, value]) => {
-          if (key === 'Id' || key.startsWith('_')) return false;
-          if (value === null || value === undefined || value === '') return false;
-          if (typeof value === 'object' && Object.keys(value).length === 0) return false;
-          return true;
-        })
-        .map(([key, value]) => `${key}: ${JSON.stringify(value)}`);
-    }
-    
-    // Get Asset Id - try multiple field name variations
-    const assetId = getFieldValue(record, ['AssetID']);
-    
-    // Get Brand and Company separately - try more variations including encoded field names
-    // Note: field_2 is the assignee field, not company, so exclude it from company lookup
-    const company = getFieldValue(record, ['Company']);
-    const model = getFieldValue(record, ['Model']);
-    
-    // Combine Brand + Company for Asset field
-    const asset = [company, model].filter(Boolean).join(' ').trim() || '-';
-    
-    // Get Serial Number - try field_4 and other variations
-    const serialNumber = getFieldValue(record, ['Serial Number']);
-    
-    // For Assignee field, check if Assignee/AssigneeName fields are available
-    // Otherwise use fallbacks
-    let assignee = '-';
-    
-    // First, check if Assignee or AssigneeName fields were populated by the service (highest priority)
-    const resolvedAssignee = record['Assignee'] || record['AssigneeName'];
-    if (resolvedAssignee && resolvedAssignee !== '-') {
-      // Handle expanded lookup object
-      if (typeof resolvedAssignee === 'object' && !Array.isArray(resolvedAssignee)) {
-        assignee = resolvedAssignee.displayName || 
-                   resolvedAssignee.Title || 
-                   resolvedAssignee.userPrincipalName ||
-                   resolvedAssignee.email ||
-                   resolvedAssignee.name ||
-                   '-';
-      } else if (!String(resolvedAssignee).startsWith('[ID:')) {
-        assignee = String(resolvedAssignee);
-      }
-    }
-    
-    if (assignee === '-') {
-      // If service didn't resolve it, try other field name variations
-      assignee = getFieldValue(record, [
-        'Assignee',
-        'AssigneeName',
-        'Assignee_x003a_Title',
-        'Assignee/Title',
-        'AssignedTo',
-        'AssignedToName',
-        'Assigned To',
-        'Assign',
-      ]);
-      
-      // If still not found and we have field_2LookupId, try to resolve from cached employees
-      if (assignee === '-' && record['field_2LookupId'] && employees && employees.length > 0) {
-        const assigneeId = String(record['field_2LookupId']);
-        
-        // Check if it's a GUID (Microsoft Graph user ID)
-        const isGuidFormat = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(assigneeId);
-        
-        let cachedEmployee: any = null;
-        
-        if (isGuidFormat) {
-          // Match by GUID (Graph user ID)
-          cachedEmployee = employees.find((emp: any) => {
-            const empId = String(emp.Id || '');
-            return empId.toLowerCase() === assigneeId.toLowerCase();
-          });
-        } else {
-          // Try integer matching (SharePoint list item ID)
-          const assigneeIdInt = parseInt(assigneeId, 10);
-          if (!isNaN(assigneeIdInt) && assigneeIdInt > 0) {
-            cachedEmployee = employees.find((emp: any) => {
-              const cachedId = typeof emp.Id === 'string' ? parseInt(emp.Id, 10) : emp.Id;
-              return cachedId === assigneeIdInt;
-            });
-            
-            // If not found by integer ID, try matching by EmpID field
-            if (!cachedEmployee) {
-              cachedEmployee = employees.find((emp: any) => {
-                const empId = String(emp.EmpID || emp.EmpId || '');
-                return empId === assigneeId || empId === String(assigneeIdInt);
-              });
-            }
-          }
-        }
-        
-        if (cachedEmployee) {
-          assignee = cachedEmployee.Employee || 
-                    cachedEmployee.EmployeeName || 
-                    cachedEmployee.Title ||
-                    cachedEmployee.displayName ||
-                    '-';
-        }
-      }
-      
-      // Final fallback: check field_2 object only if we still haven't found anything
-      if (assignee === '-' && record['field_2'] && typeof record['field_2'] === 'object' && !Array.isArray(record['field_2'])) {
-        const field2Value = record['field_2'].displayName || 
-                           record['field_2'].Title || 
-                           record['field_2'].userPrincipalName ||
-                           record['field_2'].email ||
-                           record['field_2'].name;
-        if (field2Value && field2Value !== 'null' && field2Value !== 'undefined' && String(field2Value).trim() !== '') {
-          assignee = String(field2Value).trim();
-        }
-      }
-      
-      // Last resort: show the ID if we have field_2LookupId but couldn't resolve the name
-      if (assignee === '-' && record['field_2LookupId']) {
-        assignee = `[ID: ${record['field_2LookupId']}]`;
-      }
-    }
-    
 
     return (
       <View style={styles.accessCardContent}>
         <View style={styles.accessCardRow}>
           <Text style={styles.accessCardLabel}>Asset Id:</Text>
-          <Text style={styles.accessCardValue}>{assetId}</Text>
+          <Text style={styles.accessCardValue}>{record['AssetID'] || '-'}</Text>
         </View>
         <View style={styles.accessCardRow}>
           <Text style={styles.accessCardLabel}>Asset:</Text>
-          <Text style={styles.accessCardValue}>{asset}</Text>
+          <Text style={styles.accessCardValue}>{record['Company'] || ''} {record['Model'] || ''}</Text>
         </View>
         <View style={styles.accessCardRow}>
           <Text style={styles.accessCardLabel}>Serial Number:</Text>
-          <Text style={styles.accessCardValue}>{serialNumber}</Text>
+          <Text style={styles.accessCardValue}>{record['Serial Number'] || '-'}</Text>
         </View>
         <View style={styles.accessCardRow}>
           <Text style={styles.accessCardLabel}>Assignee:</Text>
-          <Text style={styles.accessCardValue}>{assignee}</Text>
+          <Text style={styles.accessCardValue}>{record['Id'] || '-'}</Text>
         </View>
       </View>
     );
@@ -643,11 +383,6 @@ const ListScreen: React.FC<ListScreenProps> = ({
           <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{listName}</Text>
-        {/* {onCreatePress && (
-          <TouchableOpacity onPress={onCreatePress} style={styles.addButton}>
-            <Text style={styles.addButtonText}>+ Add</Text>
-          </TouchableOpacity>
-        )} */}
         {!onCreatePress && <View style={styles.placeholder} />}
       </View>
 
@@ -730,7 +465,7 @@ const ListScreen: React.FC<ListScreenProps> = ({
             
             return (
               <TouchableOpacity
-                key={String(record.Id)}
+                key={String(record.Id || record.id)}
                 style={[styles.recordCard, { backgroundColor: cardBackgroundColor }]}
                 onPress={() => onRecordPress(record)}
               >
@@ -783,14 +518,6 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     width: 60,
-  },
-  addButton: {
-    padding: 5,
-  },
-  addButtonText: {
-    fontSize: 16,
-    color: '#0078d4',
-    fontWeight: '600',
   },
   searchContainer: {
     flexDirection: 'row',
