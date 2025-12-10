@@ -155,6 +155,15 @@ const RecordView: React.FC<RecordViewProps> = ({
     if (isEditing && editedFields.hasOwnProperty(fieldName)) {
       return String(editedFields[fieldName] ?? '');
     }
+    
+    // Check if this is a LookupId field and try to get display name
+    if (fieldName.endsWith('LookupId')) {
+      const displayNameField = `${fieldName}_displayName`;
+      if (record[displayNameField]) {
+        return String(record[displayNameField]);
+      }
+    }
+    
     const value = record[fieldName];
     if (value === null || value === undefined) {
       return '';

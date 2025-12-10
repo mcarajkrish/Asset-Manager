@@ -34,6 +34,8 @@ class SharePointService {
   private siteId: string | null = null;
   private listIdCache: Map<string, string> = new Map();
   private fieldMappingCache: Map<string, Map<string, string>> = new Map(); // listName -> (internalName -> displayName)
+  private userDisplayNameCache: Map<string | number, string> = new Map(); // SharePoint user ID -> display name
+  private userInformationListId: string | null = null; // Cache for User Information List ID
   private onSessionTimeoutCallback: (() => void) | null = null;
 
   constructor(config: SharePointConfig) {
@@ -548,6 +550,73 @@ class SharePointService {
   }
 
   /**
+   * Get User Information List ID (cached)
+   */
+  private async getUserInformationListId(): Promise<string | null> {
+    if (this.userInformationListId) {
+      return this.userInformationListId;
+    }
+    
+    try {
+      const siteId = await this.getSiteId();
+      const listsResponse = await this.makeGraphRequest(`sites/${siteId}/lists?$filter=displayName eq 'User Information List'`);
+      const lists = listsResponse.value || [];
+      
+      if (lists.length > 0 && lists[0].id) {
+        this.userInformationListId = lists[0].id;
+        return this.userInformationListId;
+      }
+    } catch (error) {
+      // Silently fail - will try other approaches
+    }
+    
+    return null;
+  }
+
+  /**
+   * Resolve SharePoint user ID to display name using User Information List
+   */
+  private async resolveUserDisplayName(userId: number | string): Promise<string | null> {
+    if (!userId || !this.accessToken) {
+      return null;
+    }
+    
+    // Check cache first
+    if (this.userDisplayNameCache.has(userId)) {
+      return this.userDisplayNameCache.get(userId) || null;
+    }
+    
+    const userIdStr = String(userId);
+    let displayName: string | null = null;
+    
+    // Use User Information List via Graph API (direct item lookup)
+    try {
+      const userInfoListId = await this.getUserInformationListId();
+      if (userInfoListId) {
+        const siteId = await this.getSiteId();
+        const userItemResponse = await this.makeGraphRequest(
+          `sites/${siteId}/lists/${userInfoListId}/items/${userIdStr}?$expand=fields`
+        );
+        const fields = userItemResponse.fields || {};
+        if (fields.Title) {
+          displayName = fields.Title;
+        } else if (fields.Name) {
+          displayName = fields.Name;
+        }
+      }
+    } catch (error: any) {
+      // Return null if lookup fails
+    }
+    
+    // Cache the result if found
+    if (displayName) {
+      this.userDisplayNameCache.set(userId, displayName);
+    }
+    
+    return displayName;
+  }
+
+  /**
    * Get all items from a list
    */
   async getRecords(listName: string, cachedEmployees?: any[]): Promise<any[]> {
@@ -573,7 +642,44 @@ class SharePointService {
       return record;
     });
     
-    return records;
+    // Resolve user display names for LookupId fields
+    try {
+      const recordsWithNames = await Promise.all(
+        records.map(async (record: any) => {
+          // Find all fields ending with LookupId
+          const lookupIdFields = Object.keys(record).filter(key => 
+            key.endsWith('LookupId') && 
+            (typeof record[key] === 'number' || typeof record[key] === 'string') &&
+            record[key] !== null &&
+            record[key] !== undefined &&
+            record[key] !== ''
+          );
+          
+          // Resolve each LookupId to display name
+          for (const lookupIdField of lookupIdFields) {
+            const userId = record[lookupIdField];
+            if (userId) {
+              try {
+                const displayName = await this.resolveUserDisplayName(userId);
+                if (displayName) {
+                  record[`${lookupIdField}_displayName`] = displayName;
+                }
+              } catch (error: any) {
+                // Silently continue if resolution fails for this field
+              }
+            }
+          }
+          
+          return record;
+        })
+      );
+      
+      return recordsWithNames;
+    } catch (error: any) {
+      console.error('Error resolving user display names:', error);
+      // Return records even if resolution fails
+      return records;
+    }
   }
 
   /**

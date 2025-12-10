@@ -303,6 +303,25 @@ const ListScreen: React.FC<ListScreenProps> = ({
   const sortedRecords = React.useMemo(() => {
     if (listName === 'Assets') {
       return [...filteredRecords].sort((a, b) => {
+        // Check if assets are available (no assignee)
+        const aIsAvailable = !a['field_2LookupId'] || 
+                            a['field_2LookupId'] === null || 
+                            a['field_2LookupId'] === undefined || 
+                            a['field_2LookupId'] === '';
+        const bIsAvailable = !b['field_2LookupId'] || 
+                            b['field_2LookupId'] === null || 
+                            b['field_2LookupId'] === undefined || 
+                            b['field_2LookupId'] === '';
+        
+        // Assigned assets come first, available assets come last
+        if (aIsAvailable && !bIsAvailable) {
+          return 1; // a goes after b
+        }
+        if (!aIsAvailable && bIsAvailable) {
+          return -1; // a goes before b
+        }
+        
+        // Both are in same category (both assigned or both available), sort by AssetID
         const assetIdA = getFieldValue(a, ['AssetID']);
         const assetIdB = getFieldValue(b, ['AssetID']);
         // Try numeric comparison first, then string comparison
@@ -315,6 +334,25 @@ const ListScreen: React.FC<ListScreenProps> = ({
       });
     } else if (listName === 'Access Cards') {
       return [...filteredRecords].sort((a, b) => {
+        // Check if cards are available (no assignee)
+        const aIsAvailable = !a['EmployeeLookupId'] || 
+                            a['EmployeeLookupId'] === null || 
+                            a['EmployeeLookupId'] === undefined || 
+                            a['EmployeeLookupId'] === '';
+        const bIsAvailable = !b['EmployeeLookupId'] || 
+                            b['EmployeeLookupId'] === null || 
+                            b['EmployeeLookupId'] === undefined || 
+                            b['EmployeeLookupId'] === '';
+        
+        // Assigned cards come first, available cards come last
+        if (aIsAvailable && !bIsAvailable) {
+          return 1; // a goes after b
+        }
+        if (!aIsAvailable && bIsAvailable) {
+          return -1; // a goes before b
+        }
+        
+        // Both are in same category (both assigned or both available), sort by AccessCardNo
         const cardNoA = getFieldValue(a, ['AccessCardNo']);
         const cardNoB = getFieldValue(b, ['AccessCardNo']);
         // Try numeric comparison first, then string comparison
@@ -348,20 +386,37 @@ const ListScreen: React.FC<ListScreenProps> = ({
   };
 
   const renderAccessCardRecord = (record: Record) => {
+    // Check if Access Card is available (no assignee)
+    const hasAssignee = record['EmployeeLookupId'] && 
+                        record['EmployeeLookupId'] !== null && 
+                        record['EmployeeLookupId'] !== undefined && 
+                        record['EmployeeLookupId'] !== '';
+    
+    const assigneeDisplayName = hasAssignee ? (
+      record['EmployeeLookupId_displayName'] || 
+      record['Employee'] || 
+      record['EmployeeLookupId'] || 
+      '-'
+    ) : null;
+    
     return (
       <View style={styles.accessCardContent}>
         <View style={styles.accessCardRow}>
-          <Text style={styles.accessCardLabel}>Access Card No :</Text>
+          <Text style={styles.accessCardLabel}>Access Card :</Text>
           <Text style={styles.accessCardValue}>{record['AccessCardNo'] || '-'}</Text>
         </View>
-        <View style={styles.accessCardRow}>
-          <Text style={styles.accessCardLabel}>Assignee :</Text>
-          <Text style={styles.accessCardValue}>{record['EmployeeLookupId'] || '-'}</Text>
-        </View>
-        <View style={styles.accessCardRow}>
-          <Text style={styles.accessCardLabel}>Emp Id :</Text>
-          <Text style={styles.accessCardValue}>{record['EmpID'] || '-'}</Text>
-        </View>
+        {hasAssignee && assigneeDisplayName && (
+          <View style={styles.accessCardRow}>
+            <Text style={styles.accessCardLabel}>Assignee :</Text>
+            <Text style={styles.accessCardValue}>{assigneeDisplayName}</Text>
+          </View>
+        )}
+        {hasAssignee && record['EmpID'] && (
+          <View style={styles.accessCardRow}>
+            <Text style={styles.accessCardLabel}>Emp Id :</Text>
+            <Text style={styles.accessCardValue}>{record['EmpID'] || '-'}</Text>
+          </View>
+        )}
       </View>
     );
   };
@@ -386,6 +441,19 @@ const ListScreen: React.FC<ListScreenProps> = ({
   };
 
   const renderAssetRecord = (record: Record) => {
+    // Check if Asset is available (no assignee)
+    const hasAssignee = record['field_2LookupId'] && 
+                        record['field_2LookupId'] !== null && 
+                        record['field_2LookupId'] !== undefined && 
+                        record['field_2LookupId'] !== '';
+    
+    const assigneeDisplayName = hasAssignee ? (
+      record['field_2LookupId_displayName'] || 
+      record['field_2'] || 
+      record['field_2LookupId'] || 
+      '-'
+    ) : null;
+    
     return (
       <View style={styles.accessCardContent}>
         <View style={styles.accessCardRow}>
@@ -400,10 +468,12 @@ const ListScreen: React.FC<ListScreenProps> = ({
           <Text style={styles.accessCardLabel}>Serial Number :</Text>
           <Text style={styles.accessCardValue}>{record['field_4'] || '-'}</Text>
         </View>
-        <View style={styles.accessCardRow}>
-          <Text style={styles.accessCardLabel}>Assignee :</Text>
-          <Text style={styles.accessCardValue}>{record['field_2LookupId'] || '-'}</Text>
-        </View>
+        {hasAssignee && assigneeDisplayName && (
+          <View style={styles.accessCardRow}>
+            <Text style={styles.accessCardLabel}>Assignee :</Text>
+            <Text style={styles.accessCardValue}>{assigneeDisplayName}</Text>
+          </View>
+        )}
       </View>
     );
   };
